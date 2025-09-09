@@ -127,7 +127,15 @@ export class BenchmarkReporter {
     // Save benchmark result to file with metadata
     async saveResult(results: TestResult[], config: BenchmarkConfig, outputPath: string, resultName?: string): Promise<void> {
         const timestamp = new Date().toISOString();
-        const fileName = resultName || `${config.agent}-${config.model}-${config.provider}-${timestamp.replace(/[:.]/g, '-').slice(0, -5)}`;
+        const sanitize = (s: string) => s
+            .replace(/[\\/:*?"<>|\s]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        const safeAgent = sanitize(config.agent);
+        const safeModel = sanitize(config.model);
+        const safeProvider = sanitize(config.provider);
+        const safeTimestamp = timestamp.replace(/[:.]/g, '-').slice(0, -5);
+        const fileName = resultName || `${safeAgent}-${safeModel}-${safeProvider}-${safeTimestamp}`;
         const fullPath = join(outputPath, `${fileName}.json`);
         
         const benchmarkVersion = await getPackageVersion();

@@ -93,7 +93,13 @@ export class BenchmarkRunner {
     private generateOutputPath(args: CLIArgs, extension: string): string {
         const outputDir = args.outputDir || './results';
         const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        const filename = `benchmark-${args.agent}-${args.model}-${timestamp}.${extension}`;
+        const sanitize = (s: string) => s
+            .replace(/[\\/:*?"<>|\s]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        const safeAgent = sanitize(args.agent);
+        const safeModel = sanitize(args.model);
+        const filename = `benchmark-${safeAgent}-${safeModel}-${timestamp}.${extension}`;
         return `${outputDir}/${filename}`;
     }
 
