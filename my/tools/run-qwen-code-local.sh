@@ -2,16 +2,16 @@
 
 set -euo pipefail
 
-# Parallel ts-bench runner for Qwen Code against a local-compatible provider.
+# ts-bench runner for Qwen Code against a local-compatible provider.
 # - Uses my/tools/switch_openai_env.sh to set OPENAI_* for qwen-code
-# - Clones exercism-typescript into .benchwork/<run-id>-<shard>-exercism-typescript via rsync
-# - Initializes a tiny git repo inside each clone for agent workflows
-# - Splits exercises into N shards and runs them concurrently
+# - Clones exercism-typescript into .benchwork/<run-id>-exercism-typescript via rsync
+# - Initializes a tiny git repo inside the clone for agent workflows
+# - Runs all selected exercises sequentially (parallel option removed)
 #
 # Usage:
-#   ./run-qwen-code-local.sh <model> <server> <provider> [--parallel N] [--timeout SEC] [--exercise <name|a,b,c>] [--docker-no-cache-build]
+#   ./run-qwen-code-local.sh <model> <server> <provider> [--timeout SEC] [--exercise <name|a,b,c>] [--docker-no-cache-build]
 # Example:
-#   ./run-qwen-code-local.sh qwen3-coder-30b-a3b-instruct-dwq-v2 gamma lmstudio --parallel 4
+#   ./run-qwen-code-local.sh qwen3-coder-30b-a3b-instruct-dwq-v2 gamma lmstudio
 
 DEFAULT_MODEL="qwen3-coder-30b-a3b-instruct-dwq-v2"
 DEFAULT_SERVER="localhost"
@@ -20,6 +20,54 @@ DEFAULT_LOCAL_PROVIDER_KIND="lmstudio"   # lmstudio | ollama | llamacpp | mlx
 AGENT="qwen"
 CLI_PROVIDER="local"                     # Important: set provider=local so qwen.ts loads OPENAI_* from env
 
+print_help() {
+  cat <<EOF
+Usage:
+  ./run-qwen-code-local.sh [<model>] [<server>] [<provider>] [options]
+
+Positional args (optional):
+  model     Default: ${DEFAULT_MODEL}
+  server    Default: ${DEFAULT_SERVER}
+  provider  Default: ${DEFAULT_LOCAL_PROVIDER_KIND} (lmstudio|ollama|llamacpp|mlx)
+
+Options:
+  -h, --help                Show this help and exit
+  --timeout SEC             Per-exercise timeout in seconds (default: 600)
+  --exercise name|a,b,c     Run only the specified exercise(s). When omitted, TOP_25_EXERCISES are used.
+  --docker-no-cache-build   Rebuild Docker image without cache
+  --no-docker               Run without Docker (default: Docker is enabled)
+  --                        End of options; remaining args passed through to bun
+
+Defaults added by this wrapper:
+  --save-result             Enabled (results saved automatically)
+  --show-progress           Enabled
+  --verbose                 Enabled
+  --docker                  Enabled (use --no-docker to disable)
+  --exercism-path           Set to .benchwork/<run-id>-exercism-typescript
+
+Notes:
+  - Unknown flags are forwarded to bun (e.g., --result-dir, --result-name).
+  - Workspace is prepared at .benchwork/<run-id>-exercism-typescript; logs in .benchwork/<run-id>/logs.
+  - Results are saved by default (--save-result). Default dir: ./data/results
+
+Examples:
+  ./run-qwen-code-local.sh
+  ./run-qwen-code-local.sh ${DEFAULT_MODEL} localhost lmstudio --timeout 900 --exercise two-fer,raindrops
+EOF
+}
+
+# Show help early if requested (before consuming positional args)
+for a in "$@"; do
+  case "$a" in
+    --)
+      break ;;
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+  esac
+done
+
 MODEL=${1:-$DEFAULT_MODEL}
 SERVER=${2:-$DEFAULT_SERVER}
 LOCAL_PROVIDER_KIND=${3:-$DEFAULT_LOCAL_PROVIDER_KIND}
@@ -27,27 +75,23 @@ shift || true
 shift || true
 shift || true
 
-PARALLEL=1
 TIMEOUT_SEC=600
 EXERCISE=""
+EXERCISE_SPECIFIED=0
 DOCKER_NO_CACHE_BUILD=0
 USE_DOCKER=1
 PASS_THROUGH_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --parallel)
-      PARALLEL="${2:-$PARALLEL}"; shift 2 ;;
-    --parallel=*)
-      PARALLEL="${1#*=}"; shift ;;
     --timeout)
       TIMEOUT_SEC="${2:-$TIMEOUT_SEC}"; shift 2 ;;
     --timeout=*)
       TIMEOUT_SEC="${1#*=}"; shift ;;
     --exercise)
-      EXERCISE="${2:-}"; shift 2 ;;
+      EXERCISE="${2:-}"; EXERCISE_SPECIFIED=1; shift 2 ;;
     --exercise=*)
-      EXERCISE="${1#*=}"; shift ;;
+      EXERCISE="${1#*=}"; EXERCISE_SPECIFIED=1; shift ;;
     --docker-no-cache-build)
       DOCKER_NO_CACHE_BUILD=1; shift ;;
     --no-docker)
@@ -95,23 +139,11 @@ if [[ ! -d "$PRACTICE_DIR" ]]; then
   exit 1
 fi
 
-# Compute exercise list (comma-separated)
+# Compute exercise list for run (only if explicitly specified)
 EXERCISE_CSV=""
-if [[ -n "$EXERCISE" ]]; then
+if [[ "$EXERCISE_SPECIFIED" == "1" ]]; then
   EXERCISE_CSV="$EXERCISE"
-else
-  EXERCISE_CSV=$(cd "$PRACTICE_DIR" && ls -1d */ 2>/dev/null | sed 's:/$::' | sort | tr '\n' ',' | sed 's/,$//')
 fi
-
-if [[ -z "$EXERCISE_CSV" ]]; then
-  echo "No exercises found." >&2
-  exit 1
-fi
-
-# Split into shards
-IFS=',' read -A EX_LIST <<< "$EXERCISE_CSV"
-TOTAL=${#EX_LIST[@]}
-if (( PARALLEL > TOTAL )); then PARALLEL=$TOTAL; fi
 
 timestamp=$(date +%Y%m%d-%H%M%S)
 RUN_ID="${AGENT}-${MODEL}-${LOCAL_PROVIDER_KIND}-${timestamp}"
@@ -122,23 +154,8 @@ echo "Agent:     $AGENT"
 echo "Provider:  $CLI_PROVIDER (local kind: $LOCAL_PROVIDER_KIND)"
 echo "Model:     $MODEL"
 echo "Server:    $SERVER"
-echo "Parallel:  $PARALLEL shards"
 echo "Timeout:   $TIMEOUT_SEC s"
 echo "Run ID:    $RUN_ID"
-
-shard_ranges=()
-base=$(( TOTAL / PARALLEL ))
-rem=$(( TOTAL % PARALLEL ))
-start=1
-for (( i=1; i<=PARALLEL; i++ )); do
-  size=$base
-  (( i <= rem )) && size=$(( size + 1 ))
-  end=$(( start + size - 1 ))
-  if (( size > 0 )); then
-    shard_ranges+=("$start:$end")
-  fi
-  start=$(( end + 1 ))
-done
 
 # Configure OPENAI_* for qwen-code (source to set env in this shell)
 if [[ -f "$SCRIPT_DIR/switch_openai_env.sh" ]]; then
@@ -149,84 +166,87 @@ else
   exit 1
 fi
 
-pids=()
-for (( s=1; s<=${#shard_ranges[@]}; s++ )); do
-  range=${shard_ranges[$s]}
-  s_start=${range%%:*}
-  s_end=${range##*:}
-  # zsh array slice and join to CSV
-  shard_list=${(j:,:)${(@)EX_LIST[$s_start,$s_end]}}
-  shard_dir="$BENCH_ROOT/${RUN_ID}-p${s}-exercism-typescript"
-  log_file="$LOG_DIR/shard-${s}.log"
+# Prepare single workspace and run sequentially
 
-  (
-    set -euo pipefail
-    echo "[shard $s] Preparing workspace: $shard_dir" | tee "$log_file"
-    rsync -a --exclude='.git' "$REPO_ROOT/exercism-typescript/" "$shard_dir/"
-    (
-      cd "$shard_dir"
-      git init -q
-      git add -A
-      git commit -q -m "baseline" || true
-    )
-
-    # Pre-warm each exercise environment and add missing peer deps
-    IFS=',' read -A _EXS <<< "$shard_list"
-    for ex in ${_EXS[@]}; do
-      exdir="$shard_dir/exercises/practice/$ex"
-      if [[ -d "$exdir" ]]; then
-        echo "[shard $s] Preparing exercise deps: $ex" | tee -a "$log_file"
-        (
-          cd "$exdir"
-          corepack enable >/dev/null 2>&1 || true
-          corepack yarn >/dev/null 2>&1 || true
-          # Ensure @babel/core for babel-jest peer requirement
-          if ! node -e 'try{const p=require("./package.json");process.exit(p.devDependencies&&p.devDependencies["@babel/core"]?0:1)}catch{process.exit(1)}'; then
-            corepack yarn add -D @babel/core@^7 >/dev/null 2>&1 || true
-          fi
-        )
-        # Commit prewarm changes so later git reset keeps them
-        (
-          cd "$shard_dir"
-          git add "exercises/practice/$ex/package.json" \
-                  "exercises/practice/$ex/yarn.lock" 2>/dev/null || true
-          git commit -q -m "prep($ex): add @babel/core" || true
-        )
-      fi
-    done
-
-    echo "[shard $s] Running: $shard_list" | tee -a "$log_file"
-    (
-      cd "$REPO_ROOT"
-      exercism_rel=".benchwork/${RUN_ID}-p${s}-exercism-typescript"
-      bun "$REPO_ROOT/src/index.ts" \
-        --exercism-path "$exercism_rel" \
-        --agent "$AGENT" \
-        --provider "$CLI_PROVIDER" \
-        --model "$MODEL" \
-        --exercise "$shard_list" \
-        ${USE_DOCKER:+--docker} \
-        --show-progress \
-        --verbose \
-        --timeout "$TIMEOUT_SEC" \
-        ${PASS_THROUGH_ARGS[@]:-} \
-        2>&1 | tee -a "$log_file"
-    )
-  ) &
-  pids+=( $! )
-done
-
-fail=0
-idx=1
-for pid in ${pids[@]}; do
-  if ! wait "$pid"; then
-    echo "Shard $idx failed." >&2
-    fail=1
-  else
-    echo "Shard $idx completed."
+# Decide prewarm list:
+# - If --exercise was specified, prewarm that list
+# - Otherwise, prewarm TOP_25_EXERCISES from src/config/constants.ts
+PREWARM_CSV=""
+if [[ "$EXERCISE_SPECIFIED" == "1" ]]; then
+  PREWARM_CSV="$EXERCISE_CSV"
+else
+  if [[ -f "$REPO_ROOT/src/config/constants.ts" ]]; then
+    PREWARM_CSV=$(sed -n "s/^[[:space:]]*export const TOP_25_EXERCISES = '\(.*\)';[[:space:]]*$/\1/p" "$REPO_ROOT/src/config/constants.ts")
   fi
-  idx=$((idx+1))
-done
+fi
+
+IFS=',' read -A PREWARM_LIST <<< "$PREWARM_CSV"
+
+workspace_dir="$BENCH_ROOT/${RUN_ID}-exercism-typescript"
+log_file="$LOG_DIR/run.log"
+
+echo "Preparing workspace: $workspace_dir" | tee "$log_file"
+rsync -a --exclude='.git' "$REPO_ROOT/exercism-typescript/" "$workspace_dir/"
+(
+  cd "$workspace_dir"
+  git init -q
+  git add -A
+  git commit -q -m "baseline" || true
+)
+
+if [[ -n "$PREWARM_CSV" ]]; then
+  # Pre-warm each exercise environment and add missing peer deps (limited set)
+  for ex in ${PREWARM_LIST[@]}; do
+    exdir="$workspace_dir/exercises/practice/$ex"
+    if [[ -d "$exdir" ]]; then
+      echo "Preparing exercise deps: $ex" | tee -a "$log_file"
+      (
+        cd "$exdir"
+        corepack enable >/dev/null 2>&1 || true
+        corepack yarn >/dev/null 2>&1 || true
+        # Ensure @babel/core for babel-jest peer requirement
+        if ! node -e 'try{const p=require("./package.json");process.exit(p.devDependencies&&p.devDependencies["@babel/core"]?0:1)}catch{process.exit(1)}'; then
+          corepack yarn add -D @babel/core@^7 >/dev/null 2>&1 || true
+        fi
+      )
+      # Commit prewarm changes so later git reset keeps them
+      (
+        cd "$workspace_dir"
+        git add "exercises/practice/$ex/package.json" \
+                "exercises/practice/$ex/yarn.lock" 2>/dev/null || true
+        git commit -q -m "prep($ex): add @babel/core" || true
+      )
+    fi
+  done
+else
+  echo "No prewarm list resolved; skipping prewarm." | tee -a "$log_file"
+fi
+
+if [[ "$EXERCISE_SPECIFIED" == "1" ]]; then
+  echo "Running: $EXERCISE_CSV" | tee -a "$log_file"
+else
+  echo "Running: default TOP_25_EXERCISES" | tee -a "$log_file"
+fi
+(
+  cd "$REPO_ROOT"
+  exercism_rel=".benchwork/${RUN_ID}-exercism-typescript"
+  BUN_EXERCISE_ARGS=()
+  if [[ "$EXERCISE_SPECIFIED" == "1" ]]; then
+    BUN_EXERCISE_ARGS=( --exercise "$EXERCISE_CSV" )
+  fi
+  bun "$REPO_ROOT/src/index.ts" \
+    --exercism-path "$exercism_rel" \
+    --agent "$AGENT" \
+    --provider "$CLI_PROVIDER" \
+    --model "$MODEL" \
+    ${BUN_EXERCISE_ARGS[@]:-} \
+    ${USE_DOCKER:+--docker} \
+    --save-result \
+    --show-progress \
+    --verbose \
+    --timeout "$TIMEOUT_SEC" \
+    ${PASS_THROUGH_ARGS[@]:-} \
+    2>&1 | tee -a "$log_file"
+)
 
 echo "Logs: $LOG_DIR"
-exit $fail
