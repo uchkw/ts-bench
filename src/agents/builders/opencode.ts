@@ -14,6 +14,14 @@ export class OpenCodeAgentBuilder extends BaseAgentBuilder implements AgentBuild
             GEMINI_API_KEY: process.env.GOOGLE_API_KEY || ""
         } as Record<string, string>;
 
+        if (this.config.provider === 'local') {
+            return {
+                ...baseEnv,
+                OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || '',
+                OPENAI_MODEL: process.env.OPENAI_MODEL || this.config.model
+            };
+        }
+
         if (this.config.provider === 'xai') {
             return {
                 ...baseEnv,
