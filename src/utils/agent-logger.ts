@@ -7,9 +7,13 @@ import type { CommandResult } from './shell';
 
 const logger = new ConsoleLogger();
 
+// Stable timestamp per process run to group logs by shard
+const RUN_TIMESTAMP = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+
 function getLogDir(config: BenchmarkConfig): string {
-    const outputDir = config.outputDir || 'results';
-    return join(outputDir, config.agent, 'logs');
+    // Save logs under .benchwork/{agent}-{model}-{provider}-{timestamp}/logs
+    const shardDir = `${config.agent}-${config.model}-${config.provider}-${RUN_TIMESTAMP}`;
+    return join('.benchwork', shardDir, 'logs');
 }
 
 export interface LogCollector {
