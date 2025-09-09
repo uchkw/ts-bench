@@ -1,5 +1,5 @@
 export type AgentType = 'claude' | 'goose' | 'aider' | 'codex' | 'gemini' | 'opencode' | 'qwen' | 'cursor';
-export type ProviderType = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'dashscope' | 'xai' | 'deepseek';
+export type ProviderType = 'openai' | 'anthropic' | 'google' | 'openrouter' | 'dashscope' | 'xai' | 'deepseek' | 'local';
 
 export interface AgentResult {
     exercise: string;

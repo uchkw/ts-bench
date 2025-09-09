@@ -1,5 +1,6 @@
 import { spawn } from "bun";
-import { resolve } from "path";
+import { resolve, dirname, join } from "path";
+import { existsSync } from "fs";
 import type { Logger } from "./logger";
 
 export interface ProgressMonitorOptions {
@@ -14,6 +15,7 @@ export class ProgressMonitor {
     private lastDiffOutput: string = '';
     private isRunning: boolean = false;
     private resolvedPath: string;
+    private repoRoot: string | null = null;
 
     constructor(
         private logger: Logger,
@@ -21,9 +23,15 @@ export class ProgressMonitor {
     ) {
         // Resolve and normalize the exercise path
         this.resolvedPath = resolve(this.options.exercisePath);
+        this.repoRoot = this.findGitRoot(this.resolvedPath);
         
         if (this.options.verbose) {
             this.logger.info(`🔍 Debug: ProgressMonitor created for path: ${this.resolvedPath}`);
+            if (this.repoRoot) {
+                this.logger.info(`🔍 Debug: Detected git root: ${this.repoRoot}`);
+            } else {
+                this.logger.info(`🔍 Debug: No git root found (falling back to exercise dir)`);
+            }
         }
     }
 
@@ -87,9 +95,11 @@ export class ProgressMonitor {
             this.logger.info(`🔍 Debug: Checking progress in ${this.resolvedPath}`);
         }
 
+        const cwd = this.repoRoot ?? this.resolvedPath;
+
         // First, check for changed files with git status
         const statusProc = spawn(['git', 'status', '--porcelain'], {
-            cwd: this.resolvedPath,
+            cwd,
             stdout: 'pipe',
             stderr: 'pipe'
         });
@@ -134,8 +144,9 @@ export class ProgressMonitor {
         }
 
         // Get diff for changed TypeScript files
-        const diffProc = spawn(['git', 'diff', '--color=never', ...changedFiles], {
-            cwd: this.resolvedPath,
+        // Use `--` to ensure paths are treated as pathspecs, not revisions
+        const diffProc = spawn(['git', 'diff', '--color=never', '--', ...changedFiles], {
+            cwd,
             stdout: 'pipe',
             stderr: 'pipe'
         });
@@ -156,6 +167,17 @@ export class ProgressMonitor {
         }
 
         return '';
+    }
+
+    private findGitRoot(startPath: string): string | null {
+        let cur = startPath;
+        for (let i = 0; i < 8; i++) {
+            if (existsSync(join(cur, '.git'))) return cur;
+            const next = dirname(cur);
+            if (next === cur) break;
+            cur = next;
+        }
+        return null;
     }
 
 

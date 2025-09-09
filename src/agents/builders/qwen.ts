@@ -14,6 +14,13 @@ export class QwenAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
                 OPENAI_MODEL: this.config.model
             };
         }
+        if (this.config.provider === 'local') {
+            return {
+                OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || '',
+                OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+                OPENAI_MODEL: process.env.OPENAI_MODEL || this.config.model
+            };
+        }
         return {
             OPENAI_BASE_URL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
             OPENAI_API_KEY: process.env.DASHSCOPE_API_KEY || '',
