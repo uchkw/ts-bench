@@ -4,6 +4,7 @@ import { ExerciseRunner } from '../runners/exercise';
 import { BenchmarkReporter } from './reporter';
 import { LeaderboardGenerator } from '../utils/leaderboard-generator';
 import { VersionDetector } from '../utils/version-detector';
+import { sanitizePathSegment, sanitizeTimestampForFilename } from '../utils/sanitize';
 
 export class BenchmarkRunner {
     constructor(
@@ -92,13 +93,9 @@ export class BenchmarkRunner {
 
     private generateOutputPath(args: CLIArgs, extension: string): string {
         const outputDir = args.outputDir || './results';
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        const sanitize = (s: string) => s
-            .replace(/[\\/:*?"<>|\s]+/g, '-')
-            .replace(/-+/g, '-')
-            .replace(/^-|-$/g, '');
-        const safeAgent = sanitize(args.agent);
-        const safeModel = sanitize(args.model);
+        const safeAgent = sanitizePathSegment(args.agent);
+        const safeModel = sanitizePathSegment(args.model);
+        const timestamp = sanitizeTimestampForFilename(new Date().toISOString());
         const filename = `benchmark-${safeAgent}-${safeModel}-${timestamp}.${extension}`;
         return `${outputDir}/${filename}`;
     }

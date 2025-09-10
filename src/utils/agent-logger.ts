@@ -2,17 +2,21 @@ import { readdir, readFile, writeFile, mkdir, stat } from 'fs/promises';
 import { join, basename, resolve } from 'path';
 import { homedir } from 'os';
 import { ConsoleLogger } from './logger';
+import { sanitizePathSegment, sanitizeTimestampForFilename } from './sanitize';
 import type { AgentType, BenchmarkConfig } from '../config/types';
 import type { CommandResult } from './shell';
 
 const logger = new ConsoleLogger();
 
 // Stable timestamp per process run to group logs by shard
-const RUN_TIMESTAMP = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+const RUN_TIMESTAMP = sanitizeTimestampForFilename(new Date().toISOString());
 
 function getLogDir(config: BenchmarkConfig): string {
     // Save logs under .benchwork/{agent}-{model}-{provider}-{timestamp}/logs
-    const shardDir = `${config.agent}-${config.model}-${config.provider}-${RUN_TIMESTAMP}`;
+    const safeAgent = sanitizePathSegment(config.agent);
+    const safeModel = sanitizePathSegment(config.model);
+    const safeProvider = sanitizePathSegment(config.provider);
+    const shardDir = `${safeAgent}-${safeModel}-${safeProvider}-${RUN_TIMESTAMP}`;
     return join('.benchwork', shardDir, 'logs');
 }
 

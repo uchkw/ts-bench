@@ -2,57 +2,61 @@
 
 set -euo pipefail
 
-# ts-bench runner for Qwen Code against a local-compatible provider.
-# - Uses my/tools/switch_openai_env.sh to set OPENAI_* for qwen-code
+# ts-bench runner for Codex agent.
+# - Default provider: openai (model forced to gpt-5)
+# - If provider=local, use my/tools/switch_openai_env.sh to set OPENAI_* for an OpenAI-compatible local server
 # - Clones exercism-typescript into .benchwork/<run-id>-exercism-typescript via rsync
 # - Initializes a tiny git repo inside the clone for agent workflows
 # - Runs all selected exercises sequentially (parallel option removed)
+# - NOTE: Does NOT use --docker (Codex does not behave correctly in Docker here)
 #
 # Usage:
-#   ./run-qwen-code-local.sh <model> <server> <provider> [--timeout SEC] [--exercise <name|a,b,c>] [--docker-no-cache-build]
-# Example:
-#   ./run-qwen-code-local.sh qwen3-coder-30b-a3b-instruct-dwq-v2 gamma lmstudio
+#   ./run-codex.sh [<model>] [<server>] [<provider>] [--timeout SEC] [--exercise <name|a,b,c>]
+# Examples:
+#   ./run-codex.sh                 # defaults to provider=openai, model forced to gpt-5
+#   ./run-codex.sh gpt-4o-mini     # provider=openai, model forced to gpt-5 (as required)
+#   ./run-codex.sh qwen2.5 localhost local --exercise two-fer
 
-DEFAULT_MODEL="qwen3-coder-30b-a3b-instruct-dwq-v2"
-DEFAULT_SERVER="localhost"
-DEFAULT_LOCAL_PROVIDER_KIND="lmstudio"   # lmstudio | ollama | llamacpp | mlx
+DEFAULT_MODEL="gpt-5"  # Effective default becomes gpt-5 when provider=openai
+DEFAULT_SERVER=""
+DEFAULT_PROVIDER="openai"  # openai | lmstudio | ollama | llamacpp | mlx
 
-AGENT="qwen"
-CLI_PROVIDER="local"                     # Important: set provider=local so qwen.ts loads OPENAI_* from env
+AGENT="codex"
+# For Codex, we always pass --provider openai to the CLI. When provider=local,
+# we set OPENAI_* via switch_openai_env.sh so Codex talks to the local server.
+CLI_PROVIDER="openai"
 
 print_help() {
   cat <<EOF
 Usage:
-  ./run-qwen-code-local.sh [<model>] [<server>] [<provider>] [options]
+  ./run-codex.sh [<model>] [<server>] [<provider>] [options]
 
 Positional args (optional):
-  model     Default: ${DEFAULT_MODEL}
-  server    Default: ${DEFAULT_SERVER}
-  provider  Default: ${DEFAULT_LOCAL_PROVIDER_KIND} (lmstudio|ollama|llamacpp|mlx)
+  model     Default: ${DEFAULT_MODEL} (ignored when provider=openai; gpt-5 is forced)
+  server    Default: ${DEFAULT_SERVER} (used only when provider!=openai)
+  provider  Default: ${DEFAULT_PROVIDER} (openai|lmstudio|ollama|llamacpp|mlx)
 
 Options:
   -h, --help                Show this help and exit
   --timeout SEC             Per-exercise timeout in seconds (default: 600)
   --exercise name|a,b,c     Run only the specified exercise(s). When omitted, TOP_25_EXERCISES are used.
-  --docker-no-cache-build   Rebuild Docker image without cache
-  --no-docker               Run without Docker (default: Docker is enabled)
   --                        End of options; remaining args passed through to bun
 
 Defaults added by this wrapper:
   --save-result             Enabled (results saved automatically)
   --show-progress           Enabled
   --verbose                 Enabled
-  --docker                  Enabled (use --no-docker to disable)
   --exercism-path           Set to .benchwork/<run-id>-exercism-typescript
 
 Notes:
   - Unknown flags are forwarded to bun (e.g., --result-dir, --result-name).
-  - Workspace is prepared at .benchwork/<run-id>-exercism-typescript; logs in .benchwork/<run-id>/logs.
-  - Results are saved by default (--save-result). Default dir: ./data/results
+  - When provider=openai, --model is set to gpt-5 (as required).
+  - When provider=local, OPENAI_* env vars are set via switch_openai_env.sh.
+  - Docker is not used for Codex; no --docker flag is attached.
 
 Examples:
-  ./run-qwen-code-local.sh
-  ./run-qwen-code-local.sh ${DEFAULT_MODEL} localhost lmstudio --timeout 900 --exercise two-fer,raindrops
+  ./run-codex.sh
+  ./run-codex.sh ${DEFAULT_MODEL} localhost lmstudio --timeout 900 --exercise two-fer,raindrops
 EOF
 }
 
@@ -70,7 +74,7 @@ done
 
 MODEL=${1:-$DEFAULT_MODEL}
 SERVER=${2:-$DEFAULT_SERVER}
-LOCAL_PROVIDER_KIND=${3:-$DEFAULT_LOCAL_PROVIDER_KIND}
+PROVIDER=${3:-$DEFAULT_PROVIDER}
 shift || true
 shift || true
 shift || true
@@ -78,8 +82,6 @@ shift || true
 TIMEOUT_SEC=600
 EXERCISE=""
 EXERCISE_SPECIFIED=0
-DOCKER_NO_CACHE_BUILD=0
-USE_DOCKER=1
 PASS_THROUGH_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -92,10 +94,6 @@ while [[ $# -gt 0 ]]; do
       EXERCISE="${2:-}"; EXERCISE_SPECIFIED=1; shift 2 ;;
     --exercise=*)
       EXERCISE="${1#*=}"; EXERCISE_SPECIFIED=1; shift ;;
-    --docker-no-cache-build)
-      DOCKER_NO_CACHE_BUILD=1; shift ;;
-    --no-docker)
-      USE_DOCKER=0; shift ;;
     --)
       shift; PASS_THROUGH_ARGS+=( "$@" ); break ;;
     *)
@@ -106,29 +104,12 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-CONTAINER_NAME="ts-bench-container"
 BENCH_ROOT="$REPO_ROOT/.benchwork"
 mkdir -p "$BENCH_ROOT"
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Error: $1 not found" >&2; exit 1; }; }
 require_cmd rsync
 require_cmd bun
-if [[ "$USE_DOCKER" == "1" ]]; then
-  require_cmd docker
-fi
-
-if [[ "$USE_DOCKER" == "1" ]]; then
-  # Ensure image
-  if [[ "$DOCKER_NO_CACHE_BUILD" == "1" ]]; then
-    echo "Rebuilding Docker image '$CONTAINER_NAME' with --no-cache..."
-    ( cd "$REPO_ROOT" && docker build --no-cache -t "$CONTAINER_NAME" . )
-  else
-    if ! docker image inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-      echo "Docker image '$CONTAINER_NAME' not found. Building..."
-      ( cd "$REPO_ROOT" && docker build -t "$CONTAINER_NAME" . )
-    fi
-  fi
-fi
 
 # Exercism dataset must exist
 PRACTICE_DIR="$REPO_ROOT/exercism-typescript/exercises/practice"
@@ -152,25 +133,27 @@ sanitize_segment() {
   echo "$1" | sed -E 's/[\\/:*?"<>|[:space:]]+/-/g; s/-+/-/g; s/^-//; s/-$//'
 }
 
-RUN_ID_RAW="${AGENT}-${MODEL}-${LOCAL_PROVIDER_KIND}-${timestamp}"
+RUN_ID_RAW="${AGENT}-${MODEL}-${PROVIDER}-${timestamp}"
 RUN_ID="$(sanitize_segment "$RUN_ID_RAW")"
 LOG_DIR="$BENCH_ROOT/$RUN_ID/logs"
 mkdir -p "$LOG_DIR"
 
 echo "Agent:     $AGENT"
-echo "Provider:  $CLI_PROVIDER (local kind: $LOCAL_PROVIDER_KIND)"
+echo "Provider:  $PROVIDER (CLI provider: $CLI_PROVIDER)"
 echo "Model:     $MODEL"
 echo "Server:    $SERVER"
 echo "Timeout:   $TIMEOUT_SEC s"
 echo "Run ID:    $RUN_ID"
 
-# Configure OPENAI_* for qwen-code (source to set env in this shell)
-if [[ -f "$SCRIPT_DIR/switch_openai_env.sh" ]]; then
-  # shellcheck disable=SC1090
-  source "$SCRIPT_DIR/switch_openai_env.sh" -s "$SERVER" -m "$MODEL" --provider "$LOCAL_PROVIDER_KIND"
-else
-  echo "Error: $SCRIPT_DIR/switch_openai_env.sh not found" >&2
-  exit 1
+# Environment setup for local provider (openai-compatible server)
+if [[ "$PROVIDER" != "openai" ]]; then
+  if [[ -f "$SCRIPT_DIR/switch_openai_env.sh" ]]; then
+    # shellcheck disable=SC1090
+    source "$SCRIPT_DIR/switch_openai_env.sh" -s "$SERVER" -m "$MODEL" --provider "$PROVIDER"
+  else
+    echo "Error: $SCRIPT_DIR/switch_openai_env.sh not found" >&2
+    exit 1
+  fi
 fi
 
 # Prepare single workspace and run sequentially
@@ -193,11 +176,11 @@ workspace_dir="$BENCH_ROOT/${RUN_ID}-exercism-typescript"
 log_file="$LOG_DIR/run.log"
 
 # warmup chat endpoint
-if [[ -n "$SERVER" ]]; then
+if [[ "$PROVIDER" != "openai" ]]; then
   echo "Warming up chat endpoint at $SERVER ..."
   # POST {"model": "...", "messages": [{"role": "user", "content": "hi"}]}
   # Use curl, ignore errors, timeout 10s
-  curl -sS --max-time 100 -H "Content-Type: application/json" -X POST "$OPENAI_BASE_URL/chat/completions" \
+  curl -sS --max-time 10 -H "Content-Type: application/json" -X POST "$OPENAI_BASE_URL/chat/completions" \
       -d '{"model":"'"$MODEL"'","messages":[{"role":"user","content":"."}],"max_tokens":1,"temperature":0}' >/dev/null \
       || echo "Warmup failed: $MODEL on $SERVER" >> "$log_file"
   sleep 10
@@ -263,13 +246,21 @@ start_human=$(date '+%Y-%m-%d %H:%M:%S %Z')
   if [[ "$EXERCISE_SPECIFIED" == "1" ]]; then
     BUN_EXERCISE_ARGS=( --exercise "$EXERCISE_CSV" )
   fi
+
+  # Decide model to pass to CLI:
+  # - provider=openai: force gpt-5 as requested
+  # - provider=local: use provided MODEL (OPENAI_* env already set by switch_openai_env.sh)
+  MODEL_TO_USE="$MODEL"
+  if [[ "$PROVIDER" == "openai" ]]; then
+    MODEL_TO_USE="gpt-5"
+  fi
+
   bun "$REPO_ROOT/src/index.ts" \
     --exercism-path "$exercism_rel" \
     --agent "$AGENT" \
     --provider "$CLI_PROVIDER" \
-    --model "$MODEL" \
+    --model "$MODEL_TO_USE" \
     ${BUN_EXERCISE_ARGS[@]:-} \
-    ${USE_DOCKER:+--docker} \
     --save-result \
     --show-progress \
     --verbose \
