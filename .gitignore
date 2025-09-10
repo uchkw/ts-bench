@@ -35,5 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 results/
 current-result/
 commit-body.md
+.benchwork/
 .yarn
 yarn.lock
