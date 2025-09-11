@@ -9,21 +9,21 @@ set -euo pipefail
 # - Runs all selected exercises sequentially (parallel option removed)
 #
 # Usage:
-#   ./run-qwen-code-local.sh <model> <server> <provider> [--timeout SEC] [--exercise <name|a,b,c>] [--docker-no-cache-build]
+#   ./run-qwen-code.sh <model> <server> <provider> [--timeout SEC] [--exercise <name|a,b,c>] [--docker-no-cache-build]
 # Example:
-#   ./run-qwen-code-local.sh qwen3-coder-30b-a3b-instruct-dwq-v2 gamma lmstudio
+#   ./run-qwen-code.sh qwen3-coder-30b-a3b-instruct-dwq-v2 gamma lmstudio
 
 DEFAULT_MODEL="qwen3-coder-30b-a3b-instruct-dwq-v2"
 DEFAULT_SERVER="localhost"
 DEFAULT_LOCAL_PROVIDER_KIND="lmstudio"   # lmstudio | ollama | llamacpp | mlx
 
 AGENT="qwen"
-CLI_PROVIDER="local"                     # Important: set provider=local so qwen.ts loads OPENAI_* from env
+CLI_PROVIDER="lmstudio"                  # Important: set provider=lmstudio so qwen.ts loads OPENAI_* from env
 
 print_help() {
   cat <<EOF
 Usage:
-  ./run-qwen-code-local.sh [<model>] [<server>] [<provider>] [options]
+  ./run-qwen-code.sh [<model>] [<server>] [<provider>] [options]
 
 Positional args (optional):
   model     Default: ${DEFAULT_MODEL}
@@ -51,8 +51,8 @@ Notes:
   - Results are saved by default (--save-result). Default dir: ./data/results
 
 Examples:
-  ./run-qwen-code-local.sh
-  ./run-qwen-code-local.sh ${DEFAULT_MODEL} localhost lmstudio --timeout 900 --exercise two-fer,raindrops
+  ./run-qwen-code.sh
+  ./run-qwen-code.sh ${DEFAULT_MODEL} localhost lmstudio --timeout 900 --exercise two-fer,raindrops
 EOF
 }
 
@@ -103,6 +103,13 @@ while [[ $# -gt 0 ]]; do
       PASS_THROUGH_ARGS+=( "$1" ); shift ;;
   esac
 done
+
+# Temporarily block unsupported providers explicitly
+if [[ "$LOCAL_PROVIDER_KIND" == "ollama" ]]; then
+  echo "WARNING: provider=ollama is not supported for qwen agent currently." >&2
+  echo "Please use provider=lmstudio instead." >&2
+  exit 2
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"

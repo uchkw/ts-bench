@@ -14,7 +14,7 @@ export class QwenAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
                 OPENAI_MODEL: this.config.model
             };
         }
-        if (this.config.provider === 'local') {
+        if (this.config.provider === 'lmstudio') {
             return {
                 OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || '',
                 OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',

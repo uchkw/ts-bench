@@ -7,10 +7,10 @@ set -euo pipefail
 #
 # 1) Fetch model IDs from a local OpenAI-compatible server using get-api-models.sh
 # 2) Filter Qwen models (by regex, default: /qwen/i)
-# 3) For each model, invoke run-qwen-code-local.sh to run the benchmark
+# 3) For each model, invoke run-qwen-code.sh to run the benchmark
 #
 # Defaults target the host 'gamma' with provider 'lmstudio'.
-# Unknown flags are forwarded to run-qwen-code-local.sh (e.g., --timeout, --exercise, --result-dir, --no-docker).
+# Unknown flags are forwarded to run-qwen-code.sh (e.g., --timeout, --exercise, --result-dir, --no-docker).
 #
 # Usage examples:
 #   ./run-qwen-evals.sh                       # uses server=gamma, provider=lmstudio
@@ -38,9 +38,9 @@ Options:
   -h, --help                Show this help
 
 Notes:
-  - Unknown flags after options are forwarded to run-qwen-code-local.sh.
+  - Unknown flags after options are forwarded to run-qwen-code.sh.
   - Each selected model is invoked as:
-      run-qwen-code-local.sh <model> <server> <provider> [pass-through args]
+      run-qwen-code.sh <model> <server> <provider> [pass-through args]
   - Default: --save-result is enabled by the runner.
   - The --parallel option is not supported; execution is sequential per model.
 USAGE
@@ -52,7 +52,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Error: $1 not found" >&2; exit 1; }; }
 
 GET_SCRIPT="$SCRIPT_DIR/get-api-models.sh"
-RUN_SCRIPT="$SCRIPT_DIR/run-qwen-code-local.sh"
+RUN_SCRIPT="$SCRIPT_DIR/run-qwen-code.sh"
 if [[ ! -x "$GET_SCRIPT" ]]; then
   echo "Error: $GET_SCRIPT not found or not executable" >&2
   exit 1
