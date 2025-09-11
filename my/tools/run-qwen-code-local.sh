@@ -197,9 +197,7 @@ if [[ -n "$SERVER" ]]; then
   echo "Warming up chat endpoint at $SERVER ..."
   # POST {"model": "...", "messages": [{"role": "user", "content": "hi"}]}
   # Use curl, ignore errors, timeout 10s
-  curl -sS --max-time 100 -H "Content-Type: application/json" -X POST "$OPENAI_BASE_URL/chat/completions" \
-      -d '{"model":"'"$MODEL"'","messages":[{"role":"user","content":"."}],"max_tokens":1,"temperature":0}' >/dev/null \
-      || echo "Warmup failed: $MODEL on $SERVER" >> "$log_file"
+  curl -sS --max-time 100 -H "Content-Type: application/json" -X POST "$OPENAI_BASE_URL/chat/completions" -d "{\"model\":\"$OPENAI_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\".\"}],\"max_tokens\":1,\"temperature\":0}" >/dev/null || echo "Warmup failed: $MODEL on $SERVER" >> "$log_file"
   sleep 10
 fi
 

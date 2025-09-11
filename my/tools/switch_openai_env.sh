@@ -116,12 +116,26 @@ if [[ "$host" != *.* && "$host" != "localhost" ]]; then
   host="${host}.local"
 fi
 
-# Set environment variables
+# Set environment variables (OpenAI-compatible base URL always uses /v1)
 export OPENAI_MODEL="$model_input"
 export OPENAI_BASE_URL="http://${host}:${port}/v1"
 export OPENAI_API_KEY="sk-dummy"
 
+# Codex --oss base (use OpenAI-compatible /v1 since Codex hits /chat/completions)
+export CODEX_OSS_BASE_URL="http://${host}:${port}/v1"
+export CODEX_OSS_PORT="$port"
+
+# For Ollama warmup (/api/*) also expose base without /v1
+if [[ "$provider" == "ollama" ]]; then
+  export OLLAMA_BASE_URL="http://${host}:${port}"
+fi
+
 echo "Switched:"
-echo "  OPENAI_MODEL     = $OPENAI_MODEL"
-echo "  OPENAI_BASE_URL  = $OPENAI_BASE_URL"
-echo "  OPENAI_API_KEY   = $OPENAI_API_KEY"
+echo "  OPENAI_MODEL       = ${OPENAI_MODEL}"
+echo "  OPENAI_BASE_URL    = ${OPENAI_BASE_URL}"
+echo "  OPENAI_API_KEY     = ${OPENAI_API_KEY}"
+echo "  CODEX_OSS_BASE_URL = ${CODEX_OSS_BASE_URL}"
+echo "  CODEX_OSS_PORT     = ${CODEX_OSS_PORT}"
+if [[ -n "${OLLAMA_BASE_URL:-}" ]]; then
+  echo "  OLLAMA_BASE_URL     = ${OLLAMA_BASE_URL}"
+fi

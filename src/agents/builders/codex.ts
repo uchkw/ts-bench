@@ -14,14 +14,21 @@ export class CodexAgentBuilder extends BaseAgentBuilder implements AgentBuilder 
     }
 
     protected getCoreArgs(instructions: string): string[] {
-        return [
+        const isLocal = (this.config.provider === 'local');
+        const baseArgs = [
             'codex', 'exec',
             '-c', 'model_reasoning_effort=high',
-            '-c', `model_provider=${this.config.provider || 'openai'}`,
             '--full-auto',
             '--skip-git-repo-check',
             '-m', this.config.model,
-            instructions
         ];
+
+        if (isLocal) {
+            // Use Codex OSS mode; endpoint is controlled via CODEX_OSS_BASE_URL/CODEX_OSS_PORT
+            return [...baseArgs, '--oss', instructions];
+        } else {
+            // Cloud / OpenAI-compatible provider
+            return [...baseArgs, '-c', `model_provider=${this.config.provider || 'openai'}`, instructions];
+        }
     }
 }

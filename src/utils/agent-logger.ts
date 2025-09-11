@@ -12,7 +12,14 @@ const logger = new ConsoleLogger();
 const RUN_TIMESTAMP = sanitizeTimestampForFilename(new Date().toISOString());
 
 function getLogDir(config: BenchmarkConfig): string {
-    // Save logs under .benchwork/{agent}-{model}-{provider}-{timestamp}/logs
+    // Prefer externally provided run id for consistent naming with shell runner
+    const envRunId = process.env.BENCH_RUN_ID;
+    if (envRunId && envRunId.trim().length > 0) {
+        const safeRunId = sanitizePathSegment(envRunId.trim());
+        return join('.benchwork', safeRunId, 'logs');
+    }
+
+    // Fallback: .benchwork/{agent}-{model}-{provider}-{timestamp}/logs
     const safeAgent = sanitizePathSegment(config.agent);
     const safeModel = sanitizePathSegment(config.model);
     const safeProvider = sanitizePathSegment(config.provider);
