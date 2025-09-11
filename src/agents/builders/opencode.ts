@@ -2,6 +2,9 @@ import type { AgentBuilder, AgentConfig } from '../types';
 import { BaseAgentBuilder } from '../base';
 
 export class OpenCodeAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
+    // LLMプロバイダーの文字列集合を定義
+    private static readonly LOCAL_PROVIDERS = new Set(['lmstudio', 'ollama']);
+
     constructor(agentConfig: AgentConfig) {
         super(agentConfig);
     }
@@ -14,8 +17,8 @@ export class OpenCodeAgentBuilder extends BaseAgentBuilder implements AgentBuild
             GEMINI_API_KEY: process.env.GOOGLE_API_KEY || ""
         } as Record<string, string>;
 
-        if (this.config.provider === 'local') {
-            return {
+        if (this.config.provider && OpenCodeAgentBuilder.LOCAL_PROVIDERS.has(this.config.provider)) {
+                return {
                 ...baseEnv,
                 OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || '',
                 OPENAI_MODEL: process.env.OPENAI_MODEL || this.config.model
