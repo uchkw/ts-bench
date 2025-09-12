@@ -38,3 +38,5 @@ commit-body.md
 .benchwork/
 .yarn
 yarn.lock
+
+my/opencode.json
