@@ -36,23 +36,79 @@ export class BunCommandExecutor implements CommandExecutor {
             spawnOptions.env = { ...process.env, ...options.env };
         }
 
+        // Ensure pipes so we can consume output without blocking
+        spawnOptions.stdout = 'pipe';
+        spawnOptions.stderr = 'pipe';
+        spawnOptions.stdin = 'ignore';
+
         const proc = spawn(args, spawnOptions);
+
+        // Prepare concurrent, cancellable readers for stdout/stderr
+        const stdoutChunks: string[] = [];
+        const stderrChunks: string[] = [];
+        const dec = new TextDecoder();
+
+        const stdoutReader = proc.stdout?.getReader ? proc.stdout.getReader() : undefined;
+        const stderrReader = proc.stderr?.getReader ? proc.stderr.getReader() : undefined;
+
+        let reading = true;
+        const readStream = async (reader: ReadableStreamDefaultReader<Uint8Array> | undefined, sink: string[]) => {
+            try {
+                if (!reader) return; // No stream available
+                while (reading) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) sink.push(dec.decode(value));
+                }
+            } catch (_) {
+                // Reader cancelled or stream errored; best effort collection only
+            } finally {
+                try { reader?.releaseLock?.(); } catch (_) {}
+            }
+        };
+
+        const stdoutDone = readStream(stdoutReader, stdoutChunks);
+        const stderrDone = readStream(stderrReader, stderrChunks);
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         let timedOut = false;
+
+        // Helper: attempt to terminate the process, escalating if needed
+        const forceKillAfter = async (ms: number) => {
+            await new Promise(res => setTimeout(res, ms));
+            try { proc.kill(9); } catch (_) {}
+        };
+
+        // Helper: if this is a docker run with a named container, also kill the container
+        const tryDockerCleanup = async () => {
+            try {
+                if (args.length >= 2 && args[0] === 'docker' && args[1] === 'run') {
+                    const nameIdx = args.indexOf('--name');
+                    if (nameIdx !== -1 && nameIdx + 1 < args.length) {
+                        const cname = args[nameIdx + 1]!;
+                        const killProc = spawn(['docker', 'kill', cname], { stdout: 'ignore', stderr: 'ignore' });
+                        await Promise.race([killProc.exited, new Promise(res => setTimeout(res, 1500))]);
+                        const rmProc = spawn(['docker', 'rm', '-f', cname], { stdout: 'ignore', stderr: 'ignore' });
+                        await Promise.race([rmProc.exited, new Promise(res => setTimeout(res, 1500))]);
+                    }
+                }
+            } catch (_) {
+                // Best-effort cleanup; ignore failures
+            }
+        };
 
         try {
             if (options?.timeout && options.timeout > 0) {
                 await Promise.race([
                     proc.exited,
                     new Promise<void>((resolve) => {
-                        timeoutId = setTimeout(() => {
+                        timeoutId = setTimeout(async () => {
                             timedOut = true;
-                            try {
-                                proc.kill();
-                            } catch (_) {
-                                // ignore
-                            }
+                            try { proc.kill(); } catch (_) {}
+                            // Escalate to SIGKILL shortly after
+                            forceKillAfter(1200);
+                            // Best-effort docker cleanup when applicable
+                            tryDockerCleanup();
                             resolve();
                         }, options.timeout! * 1000);
                     })
@@ -64,8 +120,21 @@ export class BunCommandExecutor implements CommandExecutor {
             if (timeoutId) clearTimeout(timeoutId);
         }
 
-        const stdoutRaw = await new Response(proc.stdout).text();
-        const stderrRaw = await new Response(proc.stderr).text();
+        // Stop readers; if timed out, allow a small grace period then abandon
+        if (timedOut) {
+            reading = false;
+            try { await Promise.race([stdoutDone, new Promise(res => setTimeout(res, 1500))]); } catch (_) {}
+            try { await Promise.race([stderrDone, new Promise(res => setTimeout(res, 1500))]); } catch (_) {}
+            try { await stdoutReader?.cancel?.(); } catch (_) {}
+            try { await stderrReader?.cancel?.(); } catch (_) {}
+        } else {
+            reading = false;
+            try { await stdoutDone; } catch (_) {}
+            try { await stderrDone; } catch (_) {}
+        }
+
+        const stdoutRaw = stdoutChunks.join('');
+        const stderrRaw = stderrChunks.join('');
 
         const stdout = this.filterYarnNoise(stdoutRaw);
         let stderr = this.filterYarnNoise(stderrRaw);

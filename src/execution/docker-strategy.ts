@@ -46,8 +46,14 @@ export class DockerExecutionStrategy implements ExecutionStrategy {
       }
     }
 
+    // Create a unique, valid Docker container name so we can target-kill on timeout
+    const exName = basename(workspacePath).replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const runtimeName = `ocbench_${exName}_${Date.now().toString(36)}`;
+
     const command = [
       ...DOCKER_BASE_ARGS,
+      '--name', runtimeName,
+      '--init',
       ...createEnvironmentArgs(core.env || {}),
       ...createWorkspaceArgs({ workspacePath }),
       '-v', `${hostLogsDir}:/root/.local/share/opencode/log`,
