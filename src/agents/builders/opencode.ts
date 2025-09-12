@@ -14,7 +14,8 @@ export class OpenCodeAgentBuilder extends BaseAgentBuilder implements AgentBuild
             OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
             ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
             GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || "",
-            GEMINI_API_KEY: process.env.GOOGLE_API_KEY || ""
+            GEMINI_API_KEY: process.env.GOOGLE_API_KEY || "",
+            OC_PROVIDER: this.config.provider || ""
         } as Record<string, string>;
 
         if (this.config.provider && OpenCodeAgentBuilder.LOCAL_PROVIDERS.has(this.config.provider)) {
@@ -36,9 +37,17 @@ export class OpenCodeAgentBuilder extends BaseAgentBuilder implements AgentBuild
     }
 
     protected getCoreArgs(instructions: string): string[] {
+        // Prefer fully-qualified model id when provider is a known local adapter,
+        // so OpenCode resolves provider/model correctly instead of treating the
+        // model as a provider id.
+        const useQualifiedModel = this.config.provider && OpenCodeAgentBuilder.LOCAL_PROVIDERS.has(this.config.provider);
+        const modelArg = useQualifiedModel
+            ? `${this.config.provider}/${this.config.model}`
+            : this.config.model;
+
         return [
             'opencode', 'run',
-            '-m', this.config.model,
+            '-m', modelArg,
             instructions
         ];
     }

@@ -10,7 +10,7 @@ Usage:
 Basic Options:
   --agent <agent>        Agent to use (claude, goose, aider, codex, gemini, opencode, qwen, cursor) [default: claude]
   --model <model>        Model to use [default: sonnet]
-  --provider <provider>  Provider (openai, anthropic, google, openrouter, dashscope, xai, deepseek, local) [default: openai]
+  --provider <provider>  Provider (openai, anthropic, google, openrouter, dashscope, xai, deepseek) [default: openai]
   --version <version>    Agent version (e.g. 1.2.3) [default: agent-specific default]
   --verbose              Show detailed output
   --list                 List available exercises

@@ -19,7 +19,9 @@ DEFAULT_SERVER="localhost"
 DEFAULT_LOCAL_PROVIDER_KIND="lmstudio"   # lmstudio | ollama | llamacpp | mlx
 
 AGENT="opencode"
-CLI_PROVIDER="local"                     # Use local so CLI relies on OPENAI_* env inside Docker
+# Provider to pass into ts-bench CLI so the OpenCode builder knows which local adapter to target
+# Must match keys in my/opencode.json provider section (e.g., lmstudio, ollama)
+CLI_PROVIDER=""  # Will be set after parsing positional args
 
 print_help() {
   cat <<EOF
@@ -78,6 +80,9 @@ shift || true
 shift || true
 shift || true
 
+# Now that positional args are parsed, align CLI provider with the selected local provider kind
+CLI_PROVIDER="$LOCAL_PROVIDER_KIND"
+
 TIMEOUT_SEC=600
 EXERCISE=""
 EXERCISE_SPECIFIED=0
@@ -115,6 +120,25 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CONTAINER_NAME="ts-bench-container"
 BENCH_ROOT="$REPO_ROOT/.benchwork"
 mkdir -p "$BENCH_ROOT"
+
+# Assert that the specified model exists on the specified server/provider early
+ASSERT_GET_MODELS="$SCRIPT_DIR/get-api-models.sh"
+if [[ -x "$ASSERT_GET_MODELS" ]]; then
+  set +e
+  _models_output=$("$ASSERT_GET_MODELS" -s "$SERVER" --provider "$LOCAL_PROVIDER_KIND" 2>/dev/null)
+  _models_status=$?
+  set -e
+  if (( _models_status != 0 )); then
+    echo "Error: failed to fetch models for provider '$LOCAL_PROVIDER_KIND' from server '$SERVER'." >&2
+    exit 1
+  fi
+  if ! print -r -- "$_models_output" | grep -Fxq -- "$MODEL"; then
+    echo "${MODEL} is not foundin ${SERVER}."
+    exit 1
+  fi
+else
+  echo "Warning: $ASSERT_GET_MODELS not found; skipping model existence check." >&2
+fi
 
 require_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "Error: $1 not found" >&2; exit 1; }; }
 require_cmd rsync
@@ -197,6 +221,7 @@ IFS=',' read -A PREWARM_LIST <<< "$PREWARM_CSV"
 
 workspace_dir="$BENCH_ROOT/${RUN_ID}-exercism-typescript"
 log_file="$LOG_DIR/run.log"
+export BENCH_RUN_ID="$RUN_ID"
 
 # warmup chat endpoint (unless disabled)
 if [[ "$WARMUP" == "1" && -n "$SERVER" ]]; then
@@ -309,3 +334,4 @@ duration_hms=$(printf '%02d:%02d:%02d' "$hours" "$mins" "$secs")
 } >> "$log_file"
 
 echo "Logs: $LOG_DIR"
+echo "OpenCode logs: $LOG_DIR/opencode"

@@ -91,35 +91,43 @@ if [[ ! "$port" == <-> ]]; then
   exit 1
 fi
 
-# Determine host (append .local for bare hostnames except localhost)
-host="$server"
-if [[ "$host" != *.* && "$host" != "localhost" ]]; then
-  host="${host}.local"
-fi
-
-base_url="http://${host}:${port}"
+# Determine try order for hostnames
 api_key="${OPENAI_API_KEY:-sk-dummy}"
-
-# Perform GET /v1/models
-set +e
-resp=$(curl -sS \
-  --connect-timeout 2 --max-time 10 \
-  -H "Authorization: Bearer ${api_key}" \
-  -H "Content-Type: application/json" \
-  "${base_url}/v1/models" 2>&1)
-curl_exit=$?
-set -e
-
-if (( curl_exit != 0 )); then
-  echo "Request failed (exit $curl_exit):" >&2
-  echo "$resp" >&2
-  exit $curl_exit
-fi
-
-if command -v jq >/dev/null 2>&1; then
-  # Robustly handle either {data:[{id:..}]} or an array of objects
-  echo "$resp" | jq -r 'def as_array: if type=="array" then . else [.] end; (.data // .) | as_array | .[] | (.id // .)'
+tries=()
+if [[ "$server" == "localhost" ]]; then
+  tries+=("localhost")
+elif [[ "$server" == *.* ]]; then
+  tries+=("$server")
 else
-  # Fallback: naive extraction of "id": "..." values
-  echo "$resp" | sed -nE 's/.*"id"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p'
+  tries+=("${server}.local" "$server")
 fi
+
+last_exit=0
+last_err=""
+for host in "${tries[@]}"; do
+  base_url="http://${host}:${port}"
+  set +e
+  resp=$(curl -sS \
+    --connect-timeout 2 --max-time 10 \
+    -H "Authorization: Bearer ${api_key}" \
+    -H "Content-Type: application/json" \
+    "${base_url}/v1/models" 2>&1)
+  curl_exit=$?
+  set -e
+
+  if (( curl_exit == 0 )); then
+    if command -v jq >/dev/null 2>&1; then
+      echo "$resp" | jq -r 'def as_array: if type=="array" then . else [.] end; (.data // .) | as_array | .[] | (.id // .)'
+    else
+      echo "$resp" | sed -nE 's/.*"id"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p'
+    fi
+    exit 0
+  fi
+
+  last_exit=$curl_exit
+  last_err=$resp
+done
+
+echo "Request failed (exit ${last_exit}) after trying: ${tries[*]}" >&2
+echo "$last_err" >&2
+exit $last_exit
