@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/.venv
+target
+build
+dist
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.iso
+**/__pycache__
+.DS_Store
