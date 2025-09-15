@@ -50,6 +50,9 @@ Positional args (optional):
 
 Options:
   -h, --help                Show this help and exit
+  -m, --model NAME          Set model (can be used instead of positional)
+  -s, --server HOST         Set server (can be used instead of positional)
+  -p, --provider KIND       Set provider (openai|lmstudio|ollama|llamacpp|mlx)
   --timeout SEC             Per-exercise timeout in seconds (default: 600)
   --exercise name|a,b,c     Run only the specified exercise(s). When omitted, TOP_25_EXERCISES are used.
   --enable-proxy-for-lmstudio  Allow LM Studio runs via a local compatibility proxy (see my/doc/codex-lmstudio-issue.md)
@@ -77,33 +80,35 @@ Examples:
 EOF
 }
 
-# Show help early if requested (before consuming positional args)
-for a in "$@"; do
-  case "$a" in
-    --)
-      break ;;
-    -h|--help)
-      print_help
-      exit 0
-      ;;
-  esac
-done
+# Robust argument parsing: support -m/-s/-p and long options anywhere, plus positionals
 
-MODEL=${1:-$DEFAULT_MODEL}
-SERVER=${2:-$DEFAULT_SERVER}
-PROVIDER=${3:-$DEFAULT_PROVIDER}
-shift || true
-shift || true
-shift || true
-
+MODEL=""
+SERVER=""
+PROVIDER=""
 TIMEOUT_SEC=600
 EXERCISE=""
 EXERCISE_SPECIFIED=0
 PASS_THROUGH_ARGS=()
 ENABLE_LMSTUDIO_PROXY=0
+typeset -a POSITIONALS
+POSITIONALS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -h|--help)
+      print_help; exit 0 ;;
+    -m|--model)
+      MODEL="${2:-}"; shift 2 ;;
+    --model=*)
+      MODEL="${1#*=}"; shift ;;
+    -s|--server)
+      SERVER="${2:-}"; shift 2 ;;
+    --server=*)
+      SERVER="${1#*=}"; shift ;;
+    -p|--provider)
+      PROVIDER="${2:-}"; shift 2 ;;
+    --provider=*)
+      PROVIDER="${1#*=}"; shift ;;
     --timeout)
       TIMEOUT_SEC="${2:-$TIMEOUT_SEC}"; shift 2 ;;
     --timeout=*)
@@ -116,11 +121,33 @@ while [[ $# -gt 0 ]]; do
       ENABLE_LMSTUDIO_PROXY=1; shift ;;
     --)
       shift; PASS_THROUGH_ARGS+=( "$@" ); break ;;
-    *)
-      # Keep unknown flags to pass through to bun (e.g., --save-result, --result-dir)
+    -*)
+      # Unknown flags are forwarded to bun (e.g., --save-result, --result-dir)
       PASS_THROUGH_ARGS+=( "$1" ); shift ;;
+    *)
+      POSITIONALS+=( "$1" ); shift ;;
   esac
 done
+
+# Fill from positionals (model, server, provider) if missing
+if [[ -z "$MODEL" && ${#POSITIONALS[@]} -ge 1 ]]; then MODEL="${POSITIONALS[1]}"; fi
+if [[ -z "$SERVER" && ${#POSITIONALS[@]} -ge 2 ]]; then SERVER="${POSITIONALS[2]}"; fi
+if [[ -z "$PROVIDER" && ${#POSITIONALS[@]} -ge 3 ]]; then PROVIDER="${POSITIONALS[3]}"; fi
+
+# Apply defaults
+[[ -z "$MODEL" ]] && MODEL="$DEFAULT_MODEL"
+[[ -z "$PROVIDER" ]] && PROVIDER="$DEFAULT_PROVIDER"
+
+# Sanity: if server and provider look swapped, fix them
+is_provider() { case "$1" in openai|lmstudio|ollama|llamacpp|mlx) return 0 ;; *) return 1 ;; esac }
+if ! is_provider "$PROVIDER" && is_provider "${SERVER:-}"; then
+  tmp="$PROVIDER"; PROVIDER="$SERVER"; SERVER="$tmp"
+fi
+
+# Default server handling for local providers
+if [[ "$PROVIDER" != "openai" && -z "${SERVER:-}" ]]; then
+  SERVER="localhost"
+fi
 
 # Abort unless explicitly enabled for LM Studio
 if [[ "$PROVIDER" == "lmstudio" && "$ENABLE_LMSTUDIO_PROXY" != "1" ]]; then
@@ -154,11 +181,6 @@ if [[ "$EXERCISE_SPECIFIED" == "1" ]]; then
   EXERCISE_CSV="$EXERCISE"
 fi
 
-# Default server handling for local providers
-if [[ "$PROVIDER" != "openai" && -z "$SERVER" ]]; then
-  SERVER="localhost"
-fi
-
 timestamp=$(date +%Y%m%d-%H%M%S)
 
 # Sanitize a string for safe filesystem path segments (replace special chars and spaces with '-')
@@ -166,7 +188,14 @@ sanitize_segment() {
   echo "$1" | sed -E 's/[\\/:*?"<>|[:space:]]+/-/g; s/-+/-/g; s/^-//; s/-$//'
 }
 
-# Include server segment in RUN_ID when provider!=openai
+# Map to Node CLI provider before logging for accurate display
+if [[ "$PROVIDER" == "ollama" ]]; then
+  CLI_PROVIDER="local"
+else
+  CLI_PROVIDER="openai"
+fi
+
+# Include server segment in RUN_ID (use 'none' when empty)
 SERVER_SEG="${SERVER:-none}"
 RUN_ID_RAW="${AGENT}-${MODEL}-${PROVIDER}-${SERVER_SEG}-${timestamp}"
 RUN_ID="$(sanitize_segment "$RUN_ID_RAW")"
@@ -183,14 +212,6 @@ echo "Run ID:    $RUN_ID"
 
 # Environment setup for local provider (OpenAI-compatible server)
 if [[ "$PROVIDER" != "openai" ]]; then
-  # Map to Node CLI provider:
-  # - ollama -> local (use Codex --oss mode)
-  # - lmstudio/llamacpp/mlx -> openai (use OpenAI-compatible mode)
-  if [[ "$PROVIDER" == "ollama" ]]; then
-    CLI_PROVIDER="local"
-  else
-    CLI_PROVIDER="openai"
-  fi
   if [[ -f "$SCRIPT_DIR/switch_openai_env.sh" ]]; then
     # shellcheck disable=SC1090
     source "$SCRIPT_DIR/switch_openai_env.sh" -s "$SERVER" -m "$MODEL" --provider "$PROVIDER"
