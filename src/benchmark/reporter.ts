@@ -144,6 +144,7 @@ export class BenchmarkReporter {
                 provider: config.provider,
                 version: config.version,
                 timestamp,
+                timeout: config.timeout,
                 exerciseCount: results.length,
                 benchmarkVersion,
                 generatedBy: "ts-bench"
