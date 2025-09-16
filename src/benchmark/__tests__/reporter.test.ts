@@ -88,9 +88,9 @@ describe('BenchmarkReporter', () => {
     });
 
     describe('exportToJSON', () => {
-        it('generates basic JSON data structure', () => {
+        it('generates basic JSON data structure', async () => {
             const privateReporter = reporter as any;
-            const jsonData = privateReporter.generateBasicJSONData(mockResults, mockConfig);
+            const jsonData = await privateReporter.generateBasicJSONData(mockResults, mockConfig);
             
             expect(jsonData.metadata.agent).toBe('claude');
             expect(jsonData.metadata.model).toBe('sonnet-3.5');
