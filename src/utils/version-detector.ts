@@ -1,5 +1,11 @@
 import type { AgentType } from '../config/types';
+import { TS_BENCH_CONTAINER } from '../config/constants';
 import { BunCommandExecutor } from './shell';
+
+interface VersionDetectionOptions {
+    useDocker?: boolean;
+    containerName?: string;
+}
 
 export class VersionDetector {
     private executor: BunCommandExecutor;
@@ -8,9 +14,9 @@ export class VersionDetector {
         this.executor = new BunCommandExecutor();
     }
 
-    async detectAgentVersion(agent: AgentType): Promise<string> {
+    async detectAgentVersion(agent: AgentType, options: VersionDetectionOptions = {}): Promise<string> {
         try {
-            const versionArgs = this.getVersionArgs(agent);
+            const versionArgs = this.getVersionArgs(agent, options);
             const result = await this.executor.execute(versionArgs);
 
             if (result.exitCode === 0) {
@@ -25,7 +31,18 @@ export class VersionDetector {
         }
     }
 
-    private getVersionArgs(agent: AgentType): string[] {
+    private getVersionArgs(agent: AgentType, options: VersionDetectionOptions): string[] {
+        const baseCommand = this.getAgentVersionCommand(agent);
+
+        if (options.useDocker) {
+            const containerName = options.containerName || TS_BENCH_CONTAINER;
+            return ['docker', 'run', '--rm', containerName, ...baseCommand];
+        }
+
+        return baseCommand;
+    }
+
+    private getAgentVersionCommand(agent: AgentType): string[] {
         switch (agent) {
             case 'claude':
                 return ['claude', '--version'];

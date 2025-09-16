@@ -33,7 +33,7 @@ export class BenchmarkRunner {
         if (!agentVersion) {
             console.log(`🔍 Detecting ${args.agent} version...`);
             const versionDetector = new VersionDetector();
-            agentVersion = await versionDetector.detectAgentVersion(args.agent);
+            agentVersion = await versionDetector.detectAgentVersion(args.agent, { useDocker: args.useDocker });
             console.log(`📦 Detected ${args.agent} version: ${agentVersion}\n`);
         } else {
             console.log(`📦 Using specified ${args.agent} version: ${agentVersion}\n`);
