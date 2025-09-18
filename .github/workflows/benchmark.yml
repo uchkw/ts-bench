@@ -56,24 +56,6 @@ on:
         required: false
         default: false
         type: boolean
-      push_results:
-        description: 'If set to true, all solutions (successful and failed) will be pushed to a new branch in the exercism-typescript repository'
-        required: false
-        default: false
-        type: boolean
-      result_dir:
-        description: 'Directory to save result JSON files'
-        required: false
-        default: './data/results'
-      output_dir:
-        description: 'Directory for output files'
-        required: false
-        default: './results'
-      use_docker:
-        description: 'Use Docker for execution (false for native)'
-        required: false
-        default: false
-        type: boolean
 
 run-name: 'Benchmark for ${{ github.event.inputs.agent }} using ${{ github.event.inputs.model }}'
 
@@ -84,6 +66,10 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 120
+    env:
+      RESULT_DIR: ./data/results
+      OUTPUT_DIR: ./results
+      USE_DOCKER: 'false'
     
     steps:
       - name: Checkout
@@ -107,7 +93,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Install agent CLI (local mode)
-        if: ${{ github.event.inputs.use_docker != 'true' }}
+        if: ${{ env.USE_DOCKER == 'false' }}
         run: |
           set -euo pipefail
           agent="${{ github.event.inputs.agent }}"
@@ -180,7 +166,7 @@ jobs:
           EOF
 
       - name: Check local agent availability
-        if: ${{ github.event.inputs.use_docker != 'true' }}
+        if: ${{ env.USE_DOCKER == 'false' }}
         run: |
           set -euo pipefail
           agent="${{ github.event.inputs.agent }}"
@@ -210,7 +196,7 @@ jobs:
           fi
 
           if [ "$ok" -ne 1 ]; then
-            echo "::warning::Agent CLI '$agent' not found for local mode. Install it in this workflow or set 'use_docker' to true." >&2
+            echo "::warning::Agent CLI '$agent' not found for local mode. Install it in this workflow or set USE_DOCKER to true." >&2
           else
             echo "Agent CLI '$agent' found."
           fi
@@ -234,36 +220,23 @@ jobs:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         run: |
           set -euo pipefail
-          
-          # Set defaults for directories if not provided
-          RESULT_DIR="${{ github.event.inputs.result_dir }}"
-          OUTPUT_DIR="${{ github.event.inputs.output_dir }}"
-          USE_DOCKER="${{ github.event.inputs.use_docker }}"
-          
-          # Use defaults if empty
-          RESULT_DIR="${RESULT_DIR:-./data/results}"
-          OUTPUT_DIR="${OUTPUT_DIR:-./results}"
-          USE_DOCKER="${USE_DOCKER:-false}"
-          
-          # Create result directory if save_result is enabled
-          if [ "${{ github.event.inputs.save_result }}" = "true" ]; then
-            mkdir -p "$RESULT_DIR"
-          fi
+          mkdir -p "${{ env.RESULT_DIR }}"
+          mkdir -p "${{ env.OUTPUT_DIR }}"
 
           CMD=(bun src/index.ts \
             --agent "${{ github.event.inputs.agent }}" \
             --model "${{ github.event.inputs.model }}" \
             --provider "${{ github.event.inputs.provider }}" \
-            --output-dir "$OUTPUT_DIR")
+            --output-dir "${{ env.OUTPUT_DIR }}")
 
-          # Docker toggle
-          if [ "$USE_DOCKER" = "true" ]; then
+          # Toggle Docker execution when USE_DOCKER is true
+          if [ "${{ env.USE_DOCKER }}" = "true" ]; then
             CMD+=(--docker)
           fi
 
-          # Save result JSON if requested
+          # Persist results when requested
           if [ "${{ github.event.inputs.save_result }}" = "true" ]; then
-            CMD+=(--save-result --result-dir "$RESULT_DIR")
+            CMD+=(--save-result --result-dir "${{ env.RESULT_DIR }}")
           fi
 
           # Exercise selection (number, comma list, or name)
@@ -271,7 +244,7 @@ jobs:
             CMD+=(--exercise "${{ github.event.inputs.exercise }}")
           fi
 
-          # Verbose output
+          # Verbose output toggle
           if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
             CMD+=(--verbose)
           fi
@@ -289,10 +262,6 @@ jobs:
       - name: Write Job Summary
         if: always()
         run: |
-          # Set defaults for directories if not provided
-          RESULT_DIR="${{ github.event.inputs.result_dir }}"
-          RESULT_DIR="${RESULT_DIR:-./data/results}"
-          
           {
             echo "## Benchmark Results"
             echo
@@ -307,13 +276,13 @@ jobs:
             fi
 
             # If latest.json exists, print a compact summary
-            if [ -f "$RESULT_DIR/latest.json" ]; then
+            if [ -f "${{ env.RESULT_DIR }}/latest.json" ]; then
               if command -v jq >/dev/null 2>&1; then
-                TOTAL=$(jq -r '.summary.totalCount' "$RESULT_DIR/latest.json" 2>/dev/null || echo "")
-                SUCCESS=$(jq -r '.summary.successCount' "$RESULT_DIR/latest.json" 2>/dev/null || echo "")
-                RATE=$(jq -r '.summary.successRate' "$RESULT_DIR/latest.json" 2>/dev/null || echo "")
-                TDUR_MS=$(jq -r '.summary.totalDuration' "$RESULT_DIR/latest.json" 2>/dev/null || echo "")
-                ADUR_MS=$(jq -r '.summary.avgDuration' "$RESULT_DIR/latest.json" 2>/dev/null || echo "")
+                TOTAL=$(jq -r '.summary.totalCount' "${{ env.RESULT_DIR }}/latest.json" 2>/dev/null || echo "")
+                SUCCESS=$(jq -r '.summary.successCount' "${{ env.RESULT_DIR }}/latest.json" 2>/dev/null || echo "")
+                RATE=$(jq -r '.summary.successRate' "${{ env.RESULT_DIR }}/latest.json" 2>/dev/null || echo "")
+                TDUR_MS=$(jq -r '.summary.totalDuration' "${{ env.RESULT_DIR }}/latest.json" 2>/dev/null || echo "")
+                ADUR_MS=$(jq -r '.summary.avgDuration' "${{ env.RESULT_DIR }}/latest.json" 2>/dev/null || echo "")
                 # Pretty seconds (1 decimal if needed)
                 if [ -n "$TDUR_MS" ] && [ "$TDUR_MS" != "null" ]; then
                   TDUR_S=$(jq -nr --argjson ms "$TDUR_MS" '((($ms/1000)*10)|round)/10')
@@ -342,7 +311,7 @@ jobs:
                   + (if .overallSuccess then "✅" else "❌" end)
                   + " "
                   + (((.totalDuration/1000*10)|round)/10|tostring) + "s"
-                ' "$RESULT_DIR/latest.json" || true
+                ' "${{ env.RESULT_DIR }}/latest.json" || true
               fi
             fi
             echo
@@ -357,8 +326,8 @@ jobs:
         with:
           name: benchmark-results
           path: |
-            ${{ github.event.inputs.result_dir || './data/results' }}/
-            ${{ github.event.inputs.output_dir || './results' }}/${{ github.event.inputs.agent }}/logs/
+            ${{ env.RESULT_DIR }}/
+            ${{ env.OUTPUT_DIR }}/${{ github.event.inputs.agent }}/logs/
             benchmark-summary.txt
           if-no-files-found: warn
           retention-days: 14
