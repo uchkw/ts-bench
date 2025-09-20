@@ -26,16 +26,16 @@
 ## Container Design
 
 - Container name: `ts-bench-container` (`TS_BENCH_CONTAINER`)
-- Base image: `oven/bun:latest`
+- Base image: `oven/bun:1.2.22-slim`
 - Included components:
-    - Git/Curl/NPM/Unzip
-    - Agent CLIs (aider, goose, claude-code, codex, gemini-cli, qwen-code, opencode-ai, cursor)
-    - corepack (Enable `corepack@0.29.4` compatible with Node 18)
-    - PATH additions: `/root/.local/bin:/root/.cursor/bin`
-
-## Execution Strategy (Docker / Local)
-
-- Docker Execution
+    - Git/Curl/NPM/Unzip/bzip2
+    - Node.js 20 (via NodeSource) + npm 10
+    - corepack (Enable `corepack@0.29.4` compatible with Node 20)
+    - PATH additions: `/root/.local/bin`
+    - Agent bootstrap script: `/app/scripts/run-agent.sh`
+- Agent CLIs are installed on-demand by `run-agent.sh`. They are not baked into the image to keep layers small。
+    - `scripts/run-agent.sh` installs agent CLIs on demand (supports aider, goose, cursor, and Node-based CLIs), always installing to `/root/.local`. The host-side cache directory `TS_BENCH_CLI_CACHE` (default: `~/.cache/ts-bench/cli`) is mounted for persistence across runs.
+    - `scripts/smoke-agents.sh` verifies each agent's CLI with `--version` inside Docker, using the same cache mount to avoid redundant installations.
     - Base args: `docker run --rm -i`
     - Workspace: Mount host exercise directory to `/workspace` and set as working directory.
     - Test files: Mount individually as read-only (`-v host:container:ro`).
@@ -52,7 +52,8 @@
 
 - Common test command: `corepack yarn && corepack yarn test`
 - Exercism exercises assume Yarn v4 (e.g., `packageManager: yarn@4.5.1`).
-- In container, `corepack@0.29.4` is enabled (compatible with Node 18).
+- In the container, `corepack@0.29.4` is enabled (compatible with Node 20).
+- Each agent requires the appropriate API key for its provider; if a required key is missing (e.g., `OPENAI_API_KEY` for OpenAI agents), execution will immediately fail with an error.
 
 ---
 
@@ -100,8 +101,9 @@
 ## Local Usage
 
 - Docker execution (default)
-    1) Build: `docker build -t ts-bench-container .`
+    1) Build runtime image: `docker build -t ts-bench-container .`
     2) Run: `bun src/index.ts --agent aider --model gpt-4o --docker`
+       - The first invocation for each agent installs the corresponding CLI inside the ephemeral container via `run-agent.sh`.
 
 - Native execution (debug)
     - Install agent CLIs on host (see GHA install steps)
@@ -113,7 +115,7 @@
 
 - corepack not found: `npm i -g corepack@0.29.4 && corepack enable`
 - Yarn workspace warnings: Run in each exercise directory (handled by design for both Docker/local).
-- Agent CLI not found (GHA native): Check install step and PATH (`$HOME/.local/bin`, etc.).
+- Agent CLI not found: When using Docker, confirm `/app/scripts/run-agent.sh` supports the agent or install the CLI manually on the host when running without Docker.
 
 ---
 
@@ -123,4 +125,4 @@
 - Add agent CLIs: Add install steps to `Dockerfile`
 - Add environment variables: Only pass those with values (Docker arg `-e KEY=VALUE`); specify as needed
 - Update Node/corepack: Update base image/version and check compatibility
-
+- Extend on-demand installation: Update `scripts/run-agent.sh` to support additional agents or custom installers.

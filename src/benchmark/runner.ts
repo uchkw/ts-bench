@@ -5,6 +5,8 @@ import { BenchmarkReporter } from './reporter';
 import { LeaderboardGenerator } from '../utils/leaderboard-generator';
 import { VersionDetector } from '../utils/version-detector';
 import { sanitizePathSegment, sanitizeTimestampForFilename } from '../utils/sanitize';
+import { getAgentScriptPath } from '../config/paths';
+import { TS_BENCH_CONTAINER } from '../config/constants';
 
 export class BenchmarkRunner {
     constructor(
@@ -30,11 +32,17 @@ export class BenchmarkRunner {
         console.log("🚀 Starting Exercism TypeScript benchmark");
         console.log(`📋 Solving TypeScript problems with ${args.agent} agent (${args.model} model)\n`);
 
+        const useDocker = args.useDocker ?? true;
+        const agentScriptPath = getAgentScriptPath(useDocker);
         let agentVersion = args.version;
         if (!agentVersion) {
             console.log(`🔍 Detecting ${args.agent} version...`);
             const versionDetector = new VersionDetector();
-            agentVersion = await versionDetector.detectAgentVersion(args.agent, { useDocker: args.useDocker });
+            agentVersion = await versionDetector.detectAgentVersion(args.agent, {
+                useDocker,
+                containerName: TS_BENCH_CONTAINER,
+                agentScriptPath
+            });
             console.log(`📦 Detected ${args.agent} version: ${agentVersion}\n`);
         } else {
             console.log(`📦 Using specified ${args.agent} version: ${agentVersion}\n`);
@@ -49,7 +57,7 @@ export class BenchmarkRunner {
             model: args.model,
             provider: args.provider,
             verbose: args.verbose,
-            useDocker: args.useDocker,
+            useDocker,
             version: agentVersion,
             showProgress: args.showProgress,
             timeout: args.timeout,
@@ -66,23 +74,19 @@ export class BenchmarkRunner {
     }
 
     private async handleOutput(results: TestResult[], config: BenchmarkConfig, args: CLIArgs): Promise<void> {
-        // Console output (default)
         if (!args.outputFormat || args.outputFormat === 'console') {
             this.reporter.printResults(results);
         }
 
-        // JSON output
         if (args.outputFormat === 'json') {
             const outputPath = this.generateOutputPath(args, 'json');
             await this.reporter.exportToJSON(results, config, outputPath);
         }
 
-        // Save result if requested
         if (args.saveResult) {
             const resultDir = args.resultDir || './data/results';
             await this.reporter.saveResult(results, config, resultDir, args.resultName);
             
-            // Update leaderboard if requested (and not already handled above)
             if (args.updateLeaderboard) {
                 console.log('🔄 Updating leaderboard...');
                 const generator = new LeaderboardGenerator();
@@ -107,7 +111,6 @@ export class BenchmarkRunner {
         });
     }
 
-
     private selectExercises(args: CLIArgs, allExercises: string[]): string[] {
         if (args.specificExercise) {
             if (!allExercises.includes(args.specificExercise)) {
@@ -131,7 +134,6 @@ export class BenchmarkRunner {
             console.log(`🔢 Number of problems: ${count} (out of ${allExercises.length})\n`);
             return allExercises.slice(0, count);
         } else {
-            // Default: run only the first available exercise
             console.log(`📊 Found problems: ${allExercises.length} (testing only the first one)\n`);
             return allExercises.slice(0, 1);
         }

@@ -1,22 +1,21 @@
-FROM oven/bun:latest
+FROM oven/bun:1.2.22-slim
 
-# Base packages
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    ca-certificates \
-    unzip \
-    bzip2 \
-    procps \
+# Base packages required for CLI tooling and local agent compatibility
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bzip2 \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+        libxcb1 \
+        unzip \
+        procps \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-   # qwen-code use procps(pgrep), bzip2 is necessary for goose installation
-
-# Install Node.js 20.x (for global File and modern web APIs used by qwen-code)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get update \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/* \
-    && node -v && npm -v
+# qwen-code uses procps (pgrep), bzip2 is necessary for goose installation
 
 # Install Agent CLIs
 RUN curl -LsSf https://aider.chat/install.sh | sh
@@ -44,7 +43,6 @@ RUN set -e; \
 RUN curl -fsS https://cursor.com/install | bash
 
 ENV PATH="/root/.local/bin:/root/.cursor/bin:${PATH}"
-
 WORKDIR /app
 
 COPY package.json bun.lock* ./
@@ -52,6 +50,7 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 
-RUN npm i -g corepack@0.29.4 && corepack enable
+RUN npm install -g corepack@0.29.4 && corepack enable
+RUN mkdir -p /app/exercism-typescript
 
 CMD ["bash"]

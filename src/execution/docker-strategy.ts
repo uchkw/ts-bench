@@ -1,4 +1,4 @@
-import { DOCKER_BASE_ARGS, createEnvironmentArgs, createWorkspaceArgs } from '../utils/docker';
+import { DOCKER_BASE_ARGS, createCliCacheArgs, createEnvironmentArgs, createWorkspaceArgs } from '../utils/docker';
 import type { ExecutionStrategy, Command, PrepareContext, PreparedCommand } from './types';
 import { basename, dirname, join } from 'path';
 import { mkdirSync } from 'fs';
@@ -17,12 +17,11 @@ export class DockerExecutionStrategy implements ExecutionStrategy {
     // - Otherwise, fall back to .benchwork/opencode-logs
     let hostLogsDir = join(process.cwd(), '.benchwork', 'opencode-logs');
     try {
-      // workspacePath points to: .benchwork/<RUN_ID>-exercism-typescript/exercises/practice/<exercise>
       const exerciseDir = workspacePath;
-      const practiceDir = dirname(exerciseDir); // .../exercises/practice
-      const exercisesDir = dirname(practiceDir); // .../exercises
-      const wsRoot = dirname(exercisesDir); // .benchwork/<RUN_ID>-exercism-typescript
-      const benchworkDir = dirname(wsRoot); // .benchwork
+      const practiceDir = dirname(exerciseDir);
+      const exercisesDir = dirname(practiceDir);
+      const wsRoot = dirname(exercisesDir);
+      const benchworkDir = dirname(wsRoot);
       if (basename(benchworkDir) === '.benchwork') {
         const runId = basename(wsRoot).replace(/-exercism-typescript$/, '');
         hostLogsDir = join(benchworkDir, runId, 'logs', 'opencode');
@@ -33,10 +32,9 @@ export class DockerExecutionStrategy implements ExecutionStrategy {
     try {
       mkdirSync(hostLogsDir, { recursive: true });
     } catch (_) {
-      // If we fail to create, Docker will still attempt the bind; ignore here
+      // Ignore errors; Docker will attempt bind mount regardless
     }
 
-    // Build read-only mounts for test files to prevent modification
     const testMountArgs: string[] = [];
     if (ctx.testFiles && ctx.testFiles.length > 0) {
       for (const testFile of ctx.testFiles) {
@@ -46,7 +44,6 @@ export class DockerExecutionStrategy implements ExecutionStrategy {
       }
     }
 
-    // Create a unique, valid Docker container name so we can target-kill on timeout
     const exName = basename(workspacePath).replace(/[^a-zA-Z0-9_.-]/g, '_');
     const runtimeName = `ocbench_${exName}_${Date.now().toString(36)}`;
 
@@ -54,6 +51,7 @@ export class DockerExecutionStrategy implements ExecutionStrategy {
       ...DOCKER_BASE_ARGS,
       '--name', runtimeName,
       '--init',
+      ...createCliCacheArgs(),
       ...createEnvironmentArgs(core.env || {}),
       ...createWorkspaceArgs({ workspacePath }),
       '-v', `${hostLogsDir}:/root/.local/share/opencode/log`,

@@ -1,6 +1,18 @@
+# Exclude heavy directories and local artifacts from the build context
 .git
+.github/
+node_modules/
 **/node_modules
 **/.venv
+results/
+docs/
+data/
+public/
+scripts/
+!scripts/run-agent.sh
+!scripts/smoke-agents.sh
+exercism-typescript/
+.tmp/
 target
 build
 dist
@@ -9,5 +21,6 @@ dist
 *.tar.gz
 *.tgz
 *.iso
+*.log
 **/__pycache__
 .DS_Store

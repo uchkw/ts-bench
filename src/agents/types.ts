@@ -13,4 +13,5 @@ export interface AgentConfig {
     model: string;
     provider?: string;
     containerName: string;
+    agentScriptPath: string;
 }
