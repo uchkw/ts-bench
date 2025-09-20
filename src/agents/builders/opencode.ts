@@ -72,8 +72,10 @@ export class OpenCodeAgentBuilder extends BaseAgentBuilder implements AgentBuild
 
     protected getCoreArgs(instructions: string): string[] {
         const provider = this.config.provider;
-        const useQualifiedModel = provider && OpenCodeAgentBuilder.LOCAL_PROVIDERS.has(provider);
-        const model = useQualifiedModel && !this.config.model.includes('/')
+        const shouldPrefix = provider
+            && OpenCodeAgentBuilder.LOCAL_PROVIDERS.has(provider)
+            && !this.config.model.startsWith(`${provider}/`);
+        const model = shouldPrefix
             ? `${provider}/${this.config.model}`
             : this.config.model;
 
