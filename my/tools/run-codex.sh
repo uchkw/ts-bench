@@ -245,6 +245,41 @@ IFS=',' read -A PREWARM_LIST <<< "$PREWARM_CSV"
 workspace_dir="$BENCH_ROOT/${RUN_ID}-exercism-typescript"
 log_file="$LOG_DIR/run.log"
 
+CODEX_SANDBOX_HOME="$BENCH_ROOT/$RUN_ID/codex-home"
+CODEX_SANDBOX_XDG_CONFIG="$CODEX_SANDBOX_HOME/config"
+CODEX_SANDBOX_XDG_DATA="$CODEX_SANDBOX_HOME/data"
+mkdir -p "$CODEX_SANDBOX_HOME" "$CODEX_SANDBOX_XDG_CONFIG" "$CODEX_SANDBOX_XDG_DATA"
+export CODEX_SANDBOX_HOME CODEX_SANDBOX_XDG_CONFIG CODEX_SANDBOX_XDG_DATA
+
+HOST_CODEX_DIR="${HOME:-}/.codex"
+if [[ -d "$HOST_CODEX_DIR" ]]; then
+  for file in auth.json config.json config.toml version.json instructions.md; do
+    if [[ -f "$HOST_CODEX_DIR/$file" ]]; then
+      cp "$HOST_CODEX_DIR/$file" "$CODEX_SANDBOX_HOME/$file"
+    fi
+  done
+  if [[ -d "$HOST_CODEX_DIR/prompts" ]]; then
+    rsync -a "$HOST_CODEX_DIR/prompts/" "$CODEX_SANDBOX_HOME/prompts/"
+  fi
+fi
+
+cat <<'EOAGENTS' >"$CODEX_SANDBOX_HOME/AGENTS.md"
+日本語で簡潔かつ丁寧に回答してください
+応答文では必ず読点「、」の代わりに全角カンマ「，」を使用し、句点「。」の代わりに全角ピリオド「．」を使用する．
+
+You must use the `rm` command without `-rf` when deleting folders, or use the `trash` command.
+Because the `rm` command is aliased as follows, `-rf` cannot be used.
+```zsh
+alias rm='trash'
+```
+
+Use LaTeX syntax for mathematical symbols instead of unicode characters
+<example>
+❌：α
+✅：\alpha
+</example>
+EOAGENTS
+
 # warmup chat endpoint
 if [[ "$PROVIDER" != "openai" ]]; then
   # Optional LM Studio compatibility proxy to normalize /v1/embeddings payloads

@@ -9,20 +9,37 @@ export class CodexAgentBuilder extends BaseAgentBuilder implements AgentBuilder 
 
     protected getEnvironmentVariables(): Record<string, string> {
         const provider = this.config.provider ?? 'openai';
+        const env: Record<string, string> = {};
 
         switch (provider) {
             case 'openrouter':
-                return {
-                    OPENROUTER_API_KEY: requireEnv('OPENROUTER_API_KEY', 'Missing OPENROUTER_API_KEY for Codex (OpenRouter) provider')
-                };
+                env.OPENROUTER_API_KEY = requireEnv('OPENROUTER_API_KEY', 'Missing OPENROUTER_API_KEY for Codex (OpenRouter) provider');
+                break;
             case 'openai':
             case 'local':
-                return {
-                    OPENAI_API_KEY: requireEnv('OPENAI_API_KEY', 'Missing OPENAI_API_KEY for Codex (OpenAI) provider')
-                };
+                env.OPENAI_API_KEY = requireEnv('OPENAI_API_KEY', 'Missing OPENAI_API_KEY for Codex (OpenAI) provider');
+                break;
             default:
                 throw new Error(`Unsupported provider for Codex: ${provider}`);
         }
+
+        const sandboxHome = process.env.CODEX_SANDBOX_HOME;
+        if (sandboxHome) {
+            env.HOME = sandboxHome;
+            env.CODEX_HOME = sandboxHome;
+        }
+
+        const sandboxConfig = process.env.CODEX_SANDBOX_XDG_CONFIG;
+        if (sandboxConfig) {
+            env.XDG_CONFIG_HOME = sandboxConfig;
+        }
+
+        const sandboxData = process.env.CODEX_SANDBOX_XDG_DATA;
+        if (sandboxData) {
+            env.XDG_DATA_HOME = sandboxData;
+        }
+
+        return env;
     }
 
     protected getCoreArgs(instructions: string): string[] {
