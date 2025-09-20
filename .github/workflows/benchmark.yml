@@ -46,11 +46,6 @@ on:
         description: "Additional instruction text appended to the prompt"
         required: false
         default: ""
-      save_result:
-        description: Save result JSON
-        required: false
-        default: false
-        type: boolean
       verbose:
         description: Verbose console output
         required: false
@@ -239,10 +234,8 @@ jobs:
             CMD+=(--docker)
           fi
 
-          # Persist results when requested
-          if [ "${{ github.event.inputs.save_result }}" = "true" ]; then
-            CMD+=(--save-result --result-dir "${{ env.RESULT_DIR }}")
-          fi
+          # Persist results for GitHub Actions runs to power summaries
+          CMD+=(--save-result --result-dir "${{ env.RESULT_DIR }}")
 
           # Exercise selection (number, comma list, or name)
           if [ -n "${{ github.event.inputs.exercise }}" ]; then
@@ -324,6 +317,10 @@ jobs:
             echo "- Methodology: [docs/METHODOLOGY.md](https://github.com/laiso/ts-bench/blob/main/docs/METHODOLOGY.md)"
             echo "- README: [README.md](https://github.com/laiso/ts-bench/)"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -f benchmark-summary.txt ]; then
+            node scripts/append-gh-summary.mjs
+          fi
 
       - name: Upload artifacts (results + console)
         if: always()
