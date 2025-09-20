@@ -23,7 +23,7 @@ fi
 echo "Removing existing exercism-typescript* directories..."
 if [ -d "exercism-typescript" ]; then
     echo "  - removing exercism-typescript"
-    rm -rf exercism-typescript
+    rm -r exercism-typescript
 fi
 
 # Initialize and update submodules
@@ -40,7 +40,16 @@ fi
 echo "Configuring yarn in exercism-typescript..."
 cd "$PROJECT_ROOT/exercism-typescript"
 echo "  - enabling corepack"
-corepack enable
+if ! COREPACK_OUTPUT=$(corepack enable 2>&1); then
+    if echo "$COREPACK_OUTPUT" | grep -q "EEXIST"; then
+        echo "  - corepack already enabled"
+    else
+        echo "$COREPACK_OUTPUT" >&2
+        exit 1
+    fi
+else
+    printf "%s\n" "$COREPACK_OUTPUT"
+fi
 echo "  - installing yarn dependencies"
 corepack yarn install
 
