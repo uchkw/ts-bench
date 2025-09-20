@@ -1,5 +1,6 @@
 import type { AgentBuilder, AgentConfig } from '../types';
 import { BaseAgentBuilder } from '../base';
+import { requireAnyEnv } from '../../utils/env';
 
 export class AiderAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
     constructor(agentConfig: AgentConfig) {
@@ -7,11 +8,12 @@ export class AiderAgentBuilder extends BaseAgentBuilder implements AgentBuilder 
     }
 
     protected getEnvironmentVariables(): Record<string, string> {
-        return {
-            OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
-            ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
-            GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || "",
-            GEMINI_API_KEY: process.env.GOOGLE_API_KEY || "",
+        const { key, value } = requireAnyEnv(
+            ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+            'Aider requires at least one major API key'
+        );
+
+        const env: Record<string, string> = {
             AIDER_GIT: 'false',
             AIDER_AUTO_COMMITS: 'false',
             AIDER_SHOW_RELEASE_NOTES: 'false',
@@ -19,6 +21,18 @@ export class AiderAgentBuilder extends BaseAgentBuilder implements AgentBuilder 
             AIDER_CHAT_HISTORY_FILE: '/dev/null',
             AIDER_INPUT_HISTORY_FILE: '/dev/null'
         };
+
+        env[key] = value;
+
+        if (key === 'GOOGLE_API_KEY') {
+            env.GEMINI_API_KEY = value;
+        }
+
+        if (key === 'GEMINI_API_KEY') {
+            env.GOOGLE_API_KEY = value;
+        }
+
+        return env;
     }
 
     protected getCoreArgs(instructions: string, fileList?: import('../types').FileList): string[] {
@@ -26,10 +40,12 @@ export class AiderAgentBuilder extends BaseAgentBuilder implements AgentBuilder 
         const testFiles = fileList?.testFiles || [];
         
         const args: string[] = [
-            "aider", 
-            "--yes-always",
-            "--no-auto-commits", 
-            "--model", this.config.model
+            'bash',
+            this.config.agentScriptPath,
+            'aider',
+            '--yes-always',
+            '--no-auto-commits',
+            '--model', this.config.model
         ];
         
         if (sourceFiles.length > 0) {

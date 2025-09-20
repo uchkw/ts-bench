@@ -6,7 +6,8 @@ type EnvSnapshot = Record<string, string | undefined>;
 describe('OpenCodeAgentBuilder', () => {
     const baseConfig = {
         model: 'test-model',
-        containerName: 'test-container'
+        containerName: 'test-container',
+        agentScriptPath: '/tmp/scripts/run-agent.sh'
     };
 
     const RELEVANT_KEYS = [
@@ -63,6 +64,7 @@ describe('OpenCodeAgentBuilder', () => {
         const builder = new OpenCodeAgentBuilder(baseConfig);
         const command = await builder.buildCommand('instructions');
 
+        expect(command.args.slice(0, 3)).toEqual(['bash', '/tmp/scripts/run-agent.sh', 'opencode']);
         expect(command.env).toEqual({ OPENAI_API_KEY: 'openai-key' });
     });
 

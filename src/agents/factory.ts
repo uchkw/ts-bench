@@ -10,11 +10,12 @@ import { QwenAgentBuilder } from './builders/qwen';
 import { CursorAgentBuilder } from './builders/cursor';
 
 export class AgentFactory {
-    static create(config: BenchmarkConfig, containerName: string): AgentBuilder {
+    static create(config: BenchmarkConfig, containerName: string, agentScriptPath: string): AgentBuilder {
         const agentConfig = {
             model: config.model,
             provider: config.provider,
-            containerName
+            containerName,
+            agentScriptPath
         };
 
         switch (config.agent) {

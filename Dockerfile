@@ -1,25 +1,21 @@
-FROM oven/bun:latest
+FROM oven/bun:1.2.22-slim
 
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    npm \
-    unzip \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bzip2 \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+        libxcb1 \
+        unzip \
+        procps \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Agent CLIs
-RUN curl -LsSf https://aider.chat/install.sh | sh
-RUN CONFIGURE=false curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash
-RUN npm install -g \
-    @anthropic-ai/claude-code \
-    @openai/codex \
-    @google/gemini-cli \
-    @qwen-code/qwen-code \
-    opencode-ai
-RUN curl -fsS https://cursor.com/install | bash
-
-ENV PATH="/root/.local/bin:/root/.cursor/bin:${PATH}"
-
+ENV PATH="/root/.local/bin:${PATH}"
 WORKDIR /app
 
 COPY package.json bun.lock* ./
@@ -27,6 +23,7 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 
-RUN npm i -g corepack@0.29.4 && corepack enable
+RUN npm install -g corepack@0.29.4 && corepack enable
+RUN mkdir -p /app/exercism-typescript
 
 CMD ["bash"]

@@ -1,4 +1,4 @@
-import { DOCKER_BASE_ARGS, createEnvironmentArgs, createWorkspaceArgs } from '../utils/docker';
+import { DOCKER_BASE_ARGS, createCliCacheArgs, createEnvironmentArgs, createWorkspaceArgs } from '../utils/docker';
 import type { ExecutionStrategy, Command, PrepareContext, PreparedCommand } from './types';
 import { join } from 'path';
 
@@ -20,6 +20,7 @@ export class DockerExecutionStrategy implements ExecutionStrategy {
 
     const command = [
       ...DOCKER_BASE_ARGS,
+      ...createCliCacheArgs(),
       ...createEnvironmentArgs(core.env || {}),
       ...createWorkspaceArgs({ workspacePath }),
       ...testMountArgs,
@@ -33,4 +34,3 @@ export class DockerExecutionStrategy implements ExecutionStrategy {
     };
   }
 }
-

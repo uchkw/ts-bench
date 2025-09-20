@@ -1,5 +1,6 @@
 import type { AgentBuilder, AgentConfig } from '../types';
 import { BaseAgentBuilder } from '../base';
+import { requireAnyEnv, requireEnv } from '../../utils/env';
 
 export class QwenAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
     constructor(agentConfig: AgentConfig) {
@@ -7,26 +8,47 @@ export class QwenAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
     }
 
     protected getEnvironmentVariables(): Record<string, string> {
-        if (this.config.provider === 'openrouter') {
-            return {
-                OPENAI_BASE_URL: 'https://openrouter.ai/api/v1',
-                OPENAI_API_KEY: process.env.OPENROUTER_API_KEY || '',
-                OPENAI_MODEL: this.config.model
-            };
+        const provider = this.config.provider ?? 'dashscope';
+
+        switch (provider) {
+            case 'openrouter': {
+                const { value } = requireAnyEnv(
+                    ['OPENROUTER_API_KEY'],
+                    'Missing API key for Qwen (OpenRouter) provider'
+                );
+                return {
+                    OPENAI_BASE_URL: 'https://openrouter.ai/api/v1',
+                    OPENAI_API_KEY: value,
+                    OPENAI_MODEL: this.config.model
+                };
+            }
+            case 'openai': {
+                const value = requireEnv('OPENAI_API_KEY', 'Missing OPENAI_API_KEY for Qwen (OpenAI) provider');
+                return {
+                    OPENAI_BASE_URL: 'https://api.openai.com/v1',
+                    OPENAI_API_KEY: value,
+                    OPENAI_MODEL: this.config.model
+                };
+            }
+            default: {
+                const value = requireEnv('DASHSCOPE_API_KEY', 'Missing DASHSCOPE_API_KEY for Qwen (DashScope) provider');
+                return {
+                    OPENAI_BASE_URL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+                    OPENAI_API_KEY: value,
+                    OPENAI_MODEL: this.config.model
+                };
+            }
         }
-        return {
-            OPENAI_BASE_URL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-            OPENAI_API_KEY: process.env.DASHSCOPE_API_KEY || '',
-            OPENAI_MODEL: this.config.model
-        };
     }
 
     protected getCoreArgs(instructions: string): string[] {
         return [
+            'bash',
+            this.config.agentScriptPath,
             'qwen',
             '-y',
             '-m', this.config.model,
             '-p', instructions
         ];
     }
-} 
+}
