@@ -40,7 +40,7 @@ case "$AGENT" in
     fi
     exec goose "$@"
     ;;
-  cursor-agent)
+  cursor | cursor-agent)
     if ! command -v "cursor-agent" >/dev/null 2>&1; then
       echo "[run-agent] Installing cursor agent" >&2
       curl -fsS https://cursor.com/install | bash
