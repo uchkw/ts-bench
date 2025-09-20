@@ -1,5 +1,6 @@
 import type { AgentBuilder, AgentConfig } from '../types';
 import { BaseAgentBuilder } from '../base';
+import { requireEnv } from '../../utils/env';
 
 export class CodexAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
     constructor(agentConfig: AgentConfig) {
@@ -7,14 +8,26 @@ export class CodexAgentBuilder extends BaseAgentBuilder implements AgentBuilder 
     }
 
     protected getEnvironmentVariables(): Record<string, string> {
-        return {
-            OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
-            OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || ""
-        };
+        const provider = this.config.provider ?? 'openai';
+
+        switch (provider) {
+            case 'openrouter':
+                return {
+                    OPENROUTER_API_KEY: requireEnv('OPENROUTER_API_KEY', 'Missing OPENROUTER_API_KEY for Codex (OpenRouter) provider')
+                };
+            case 'openai':
+                return {
+                    OPENAI_API_KEY: requireEnv('OPENAI_API_KEY', 'Missing OPENAI_API_KEY for Codex (OpenAI) provider')
+                };
+            default:
+                throw new Error(`Unsupported provider for Codex: ${provider}`);
+        }
     }
 
     protected getCoreArgs(instructions: string): string[] {
         return [
+            'bash',
+            this.config.agentScriptPath,
             'codex', 'exec',
             '-c', 'model_reasoning_effort=high',
             '-c', `model_provider=${this.config.provider || 'openai'}`,

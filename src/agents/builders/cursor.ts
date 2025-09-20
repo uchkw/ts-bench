@@ -1,5 +1,6 @@
 import type { AgentBuilder, AgentConfig, FileList } from '../types';
 import { BaseAgentBuilder } from '../base';
+import { requireEnv } from '../../utils/env';
 
 export class CursorAgentBuilder extends BaseAgentBuilder implements AgentBuilder {
     constructor(agentConfig: AgentConfig) {
@@ -8,7 +9,7 @@ export class CursorAgentBuilder extends BaseAgentBuilder implements AgentBuilder
 
     protected getEnvironmentVariables(): Record<string, string> {
         return {
-            CURSOR_API_KEY: process.env.CURSOR_API_KEY || ""
+            CURSOR_API_KEY: requireEnv('CURSOR_API_KEY', 'Missing CURSOR_API_KEY for Cursor Agent')
         };
     }
 
@@ -16,6 +17,8 @@ export class CursorAgentBuilder extends BaseAgentBuilder implements AgentBuilder
         const sourceFiles = fileList?.sourceFiles || [];
 
         const args = [
+            'bash',
+            this.config.agentScriptPath,
             'cursor-agent',
             '--model',
             this.config.model,

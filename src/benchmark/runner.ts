@@ -4,6 +4,8 @@ import { ExerciseRunner } from '../runners/exercise';
 import { BenchmarkReporter } from './reporter';
 import { LeaderboardGenerator } from '../utils/leaderboard-generator';
 import { VersionDetector } from '../utils/version-detector';
+import { getAgentScriptPath } from '../config/paths';
+import { TS_BENCH_CONTAINER } from '../config/constants';
 
 export class BenchmarkRunner {
     constructor(
@@ -29,11 +31,17 @@ export class BenchmarkRunner {
         console.log("🚀 Starting Exercism TypeScript benchmark");
         console.log(`📋 Solving TypeScript problems with ${args.agent} agent (${args.model} model)\n`);
 
+        const useDocker = args.useDocker ?? true;
+        const agentScriptPath = getAgentScriptPath(useDocker);
         let agentVersion = args.version;
         if (!agentVersion) {
             console.log(`🔍 Detecting ${args.agent} version...`);
             const versionDetector = new VersionDetector();
-            agentVersion = await versionDetector.detectAgentVersion(args.agent, { useDocker: args.useDocker });
+            agentVersion = await versionDetector.detectAgentVersion(args.agent, {
+                useDocker,
+                containerName: TS_BENCH_CONTAINER,
+                agentScriptPath
+            });
             console.log(`📦 Detected ${args.agent} version: ${agentVersion}\n`);
         } else {
             console.log(`📦 Using specified ${args.agent} version: ${agentVersion}\n`);
@@ -48,7 +56,7 @@ export class BenchmarkRunner {
             model: args.model,
             provider: args.provider,
             verbose: args.verbose,
-            useDocker: args.useDocker,
+            useDocker,
             version: agentVersion,
             showProgress: args.showProgress,
             timeout: args.timeout,

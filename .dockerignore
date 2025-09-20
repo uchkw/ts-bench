@@ -1,0 +1,14 @@
+# Exclude heavy directories and local artifacts from the build context
+node_modules/
+results/
+docs/
+data/
+public/
+scripts/
+!scripts/run-agent.sh
+!scripts/smoke-agents.sh
+exercism-typescript/
+*.log
+.tmp/
+.git
+.github/

@@ -8,6 +8,7 @@ import { ProgressMonitor } from '../utils/progress-monitor';
 import { join } from 'path';
 import { LocalExecutionStrategy } from '../execution/local-strategy';
 import { DockerExecutionStrategy } from '../execution/docker-strategy';
+import { getAgentScriptPath } from '../config/paths';
 
 export class AgentRunner {
     constructor(
@@ -33,7 +34,8 @@ export class AgentRunner {
         }
 
         try {
-            const agentBuilder = AgentFactory.create(config, this.containerName);
+            const agentScriptPath = getAgentScriptPath(useDocker);
+            const agentBuilder = AgentFactory.create(config, this.containerName, agentScriptPath);
             const instructions = await this.exerciseReader.getInstructions(exercise, this.baseInstruction, this.customInstruction);
             const fileList = await this.exerciseReader.getFileList(exercise);
             const coreCommand = await agentBuilder.buildCommand(instructions, fileList);

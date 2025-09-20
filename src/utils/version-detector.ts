@@ -1,10 +1,12 @@
 import type { AgentType } from '../config/types';
 import { TS_BENCH_CONTAINER } from '../config/constants';
 import { BunCommandExecutor } from './shell';
+import { DOCKER_BASE_ARGS, createCliCacheArgs } from './docker';
 
-interface VersionDetectionOptions {
+interface DetectOptions {
     useDocker?: boolean;
     containerName?: string;
+    agentScriptPath?: string;
 }
 
 export class VersionDetector {
@@ -14,7 +16,7 @@ export class VersionDetector {
         this.executor = new BunCommandExecutor();
     }
 
-    async detectAgentVersion(agent: AgentType, options: VersionDetectionOptions = {}): Promise<string> {
+    async detectAgentVersion(agent: AgentType, options: DetectOptions = {}): Promise<string> {
         try {
             const versionArgs = this.getVersionArgs(agent, options);
             const result = await this.executor.execute(versionArgs);
@@ -31,12 +33,35 @@ export class VersionDetector {
         }
     }
 
-    private getVersionArgs(agent: AgentType, options: VersionDetectionOptions): string[] {
+    private getVersionArgs(agent: AgentType, options: DetectOptions): string[] {
+        const { useDocker, containerName, agentScriptPath } = options;
+
+        if (agentScriptPath) {
+            if (useDocker && containerName) {
+                return [
+                    ...DOCKER_BASE_ARGS,
+                    ...createCliCacheArgs(),
+                    containerName,
+                    'bash',
+                    agentScriptPath,
+                    agent,
+                    '--version'
+                ];
+            }
+
+            return ['bash', agentScriptPath, agent, '--version'];
+        }
+
         const baseCommand = this.getAgentVersionCommand(agent);
 
-        if (options.useDocker) {
-            const containerName = options.containerName || TS_BENCH_CONTAINER;
-            return ['docker', 'run', '--rm', containerName, ...baseCommand];
+        if (useDocker) {
+            const container = containerName || TS_BENCH_CONTAINER;
+            return [
+                ...DOCKER_BASE_ARGS,
+                ...createCliCacheArgs(),
+                container,
+                ...baseCommand
+            ];
         }
 
         return baseCommand;
